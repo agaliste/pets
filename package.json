@@ -1,0 +1,16 @@
+{
+  "name": "claude-office",
+  "version": "0.1.0",
+  "description": "A terminal office where a Claude mascot shows up for every running Claude Code session",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "bun run src/main.ts",
+    "check": "tsc --noEmit",
+    "build": "bun build --compile --minify src/main.ts --outfile dist/claude-office"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^7"
+  }
+}
