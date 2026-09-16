@@ -22,6 +22,8 @@ export interface DesktopFrame {
 export const PIXEL = 4;
 const MARGIN = 48;
 const ARRIVAL_SECONDS = 1;
+const MISSILE_SECONDS = 0.7;
+const BLAST_SECONDS = 1.2;
 const LIGHTNING_SECONDS = 0.55;
 const LIGHTNING_SCALE = 2.5;
 const WORK_CALLOUT_SECONDS = 1.15;
@@ -107,6 +109,18 @@ export function desktopAtlas(): Record<string, Sprite> {
   atlas["explosion:smoke"] = {
     rows: ["..##...", ".####..", "######.", ".######", "..####.", "...##.."], palette: { "#": MUSIC_COLORS.muted },
   };
+  const missile = [".............", ".............", ".............", "..#..........", "..##.........", "..#=======R..", ".##*******RR.", "..#=======R..", "..##.........", "..#..........", ".............", ".............", "............."];
+  // Bake cardinal rotations into the atlas so the native renderer needs no changes.
+  let rotated = missile;
+  for (let direction = 0; direction < 4; direction++) {
+    atlas[`airstrike:missile:${direction}`] = { rows: rotated, palette: { "#": 0x667788, "=": 0xaebdcb, "*": 0xeef4ed, "R": 0xf45b43 } };
+    rotated = rotated[0]!.split("").map((_, x) => rotated.map(row => row[x]).reverse().join(""));
+  }
+  atlas["airstrike:flame"] = { rows: ["..#..", ".#+#.", "#+*+#", ".#+#.", "..#.."], palette: fire };
+  atlas["airstrike:cloud"] = {
+    rows: ["....#####....", "..#########..", ".##*******##.", "###*******###", ".###########.", "...#######...", ".....###.....", ".....###.....", "....#####....", "...#######..."],
+    palette: { "#": 0xba6440, "*": 0xffd180 },
+  };
   atlas["explosion:claude"] = { rows: ["##", "#."], palette: { "#": C.body } };
   atlas["explosion:codex"] = { rows: ["##", "#."], palette: { "#": CODEX_PALETTE["#"]! } };
   const vortex = [
@@ -156,7 +170,8 @@ export class DesktopScene {
   private nextKick = 0;
   private lyric = "";
   private lyricSince = 0;
-  private explosions: Array<Point & { born: number; provider: AgentSession["provider"]; phase: number }> = [];
+  private explosions: Array<Point & { born: number; provider: AgentSession["provider"]; phase: number; start: Point; direction: number; body: Placement[] }> = [];
+  private renderedPets = new Map<number, Placement[]>();
   private readonly shots: FootballEffects;
 
   get hasEffects(): boolean {
@@ -209,13 +224,21 @@ export class DesktopScene {
     this.elapsed += dt;
     const now = this.elapsed;
     const live = new Set(sessions.map(s => s.pid));
-    this.explosions = paused ? [] : this.explosions.filter(effect => now - effect.born < 0.85);
+    this.explosions = paused ? [] : this.explosions.filter(effect => now - effect.born < MISSILE_SECONDS + BLAST_SECONDS);
     for (const [pid, pet] of this.pets) {
       if (live.has(pid)) continue;
-      if (!paused) this.explosions.push({
-        x: pet.x, y: pet.y + Math.sin((now - dt) * 2 + pet.phase) * 5,
-        born: now, provider: pet.session.provider, phase: pet.phase,
-      });
+      if (!paused) {
+        const screen = nearestScreen(this.screens, pet)!;
+        const direction = hash(`${pet.session.provider}:${pet.session.sessionId ?? pid}`) % 4;
+        const y = pet.y + Math.sin((now - dt) * 2 + pet.phase) * 5;
+        const start = [
+          { x: screen.x, y }, { x: pet.x, y: screen.y },
+          { x: screen.x + screen.w, y }, { x: pet.x, y: screen.y + screen.h },
+        ][direction]!;
+        this.explosions.push({ x: pet.x, y, born: now, provider: pet.session.provider,
+          phase: pet.phase, start, direction, body: this.renderedPets.get(pid) ?? [] });
+      }
+      this.renderedPets.delete(pid);
       this.pets.delete(pid);
     }
     for (const session of sessions) {
@@ -294,10 +317,12 @@ export class DesktopScene {
       const bodyPart = (sprite: string, px: number, py: number): void => {
         if (reveal > 0) frame.sprites.push({ sprite, x: Math.round(px), y: Math.round(py), scale: reveal, flip: pet.flip });
       };
+      const bodyStart = frame.sprites.length;
       bodyPart(`${pet.session.provider}:${pose}`, x, y);
       bodyPart(`hat:${pet.hat}`, x, y - (HATS[pet.hat]!.rows.length - 1) * PIXEL * reveal);
       bodyPart(`accessory:${pet.accessory}`, x, y + ACCESSORIES[pet.accessory]!.y[pet.session.provider] * PIXEL * reveal);
       if (busy && reveal > 0) frame.sprites.push({ sprite: "laptop", x: Math.round(x + (pet.flip ? -18 : 42) * reveal), y: Math.round(y + 18 * reveal), scale: reveal, flip: false });
+      this.renderedPets.set(pet.session.pid, frame.sprites.slice(bodyStart));
       if (lightningAge < LIGHTNING_SECONDS) {
         const targetY = y + 8 * reveal;
         const screen = nearestScreen(this.screens, pet)!;
@@ -366,9 +391,26 @@ export class DesktopScene {
       });
     } else this.singer = null;
     for (const effect of this.explosions) {
-      const age = now - effect.born;
+      const flightAge = now - effect.born;
+      if (flightAge < MISSILE_SECONDS) {
+        frame.sprites.push(...effect.body);
+        const progress = Math.pow(flightAge / MISSILE_SECONDS, 1.5);
+        const position = { x: effect.start.x + (effect.x - effect.start.x) * progress, y: effect.start.y + (effect.y - effect.start.y) * progress };
+        const heading = speed(effect.start, effect, 1);
+        for (let i = 7; i >= 1; i--) {
+          const scale = (1 - i / 9) * 0.65;
+          frame.sprites.push({ sprite: i < 3 ? "airstrike:flame" : "explosion:smoke", x: Math.round(position.x - heading.x * i * 10 - 10 * scale), y: Math.round(position.y - heading.y * i * 10 - 10 * scale), scale, flip: false });
+        }
+        frame.sprites.push({ sprite: `airstrike:missile:${effect.direction}`, x: Math.round(position.x - 26), y: Math.round(position.y - 26), scale: 1, flip: false });
+        continue;
+      }
+      const age = flightAge - MISSILE_SECONDS;
+      if (age >= 0.18) {
+        const scale = Math.min(1, (age - 0.18) / 0.18) * Math.min(1, (BLAST_SECONDS - age) / 0.35) * 1.7;
+        frame.sprites.push({ sprite: "airstrike:cloud", x: Math.round(effect.x - 26 * scale), y: Math.round(effect.y - 40 * scale - age * 24), scale, flip: false });
+      }
       if (age < 0.38) {
-        const scale = 0.6 + age * 3;
+        const scale = 1.2 + age * 6;
         frame.sprites.push({ sprite: age < 0.14 ? "explosion:burst" : "explosion:ring", x: Math.round(effect.x - 18 * scale), y: Math.round(effect.y - 18 * scale), scale, flip: false });
       }
       // Eight provider-colored pixel fragments fly out, arc downward, then shrink.

@@ -189,21 +189,26 @@ describe("floating desktop scene", () => {
     sim.update([session(1, "busy")], null, 1 / 30);
     const frame = sim.update([], null, 1 / 30);
     expect(frame.sprites.some(p => p.sprite.startsWith("lightning:"))).toBe(false);
-    expect(frame.sprites.some(p => p.sprite === "explosion:burst")).toBe(true);
+    expect(frame.sprites.some(p => p.sprite.startsWith("airstrike:missile:"))).toBe(true);
   });
   test("a departed session explodes once at its last rendered position, then clears", () => {
     const sim = scene();
     const before = settle(sim, [session(1)]);
     const body = before.sprites.find(s => s.sprite.startsWith("claude:"))!;
     const after = sim.update([], null, 1 / 30);
-    const burst = after.sprites.find(s => s.sprite === "explosion:burst")!;
+    expect(after.sprites.some(s => s.sprite.startsWith("airstrike:missile:"))).toBe(true);
+    expect(after.sprites.some(s => s.sprite === "explosion:burst")).toBe(false);
+    expect(after.sprites.find(s => s.sprite.startsWith("claude:"))).toEqual(body);
+    let impact = after;
+    for (let i = 0; i < 22; i++) impact = sim.update([], null, 1 / 30);
+    const burst = impact.sprites.find(s => s.sprite === "explosion:burst")!;
     expect(sim.pets.size).toBe(0);
     expect(after.sessions).toEqual([]);
     expect(sim.hasEffects).toBe(true);
-    expect(after.sprites.some(s => s.sprite.startsWith("claude:"))).toBe(false);
+    expect(impact.sprites.some(s => s.sprite.startsWith("claude:"))).toBe(false);
     expect(Math.abs(burst.x + 18 * burst.scale! - (body.x + 24))).toBeLessThan(1);
     expect(Math.abs(burst.y + 18 * burst.scale! - (body.y + 16))).toBeLessThan(1);
-    let frame = after;
+    let frame = impact;
     for (let i = 0; i < 6; i++) frame = sim.update([], null, 1 / 30);
     expect(frame.sprites.some(s => s.sprite === "explosion:ring")).toBe(true);
     expect(frame.sprites.filter(s => s.sprite === "explosion:claude")).toHaveLength(8);
@@ -214,10 +219,39 @@ describe("floating desktop scene", () => {
     expect(frame.sprites).toEqual([]);
     expect(sim.hasEffects).toBe(false);
   });
+  test("missiles enter from each monitor border and approach the target before impact", () => {
+    const directions = new Set<string>();
+    for (let pid = 1; pid <= 20; pid++) {
+      const sim = scene();
+      const screen = { id: "upper", x: -1400, y: -1000, w: 1000, h: 800 };
+      sim.setScreens([screen]);
+      const before = settle(sim, [session(pid)]);
+      const body = before.sprites.find(p => /^(claude|codex):/.test(p.sprite))!;
+      const target = { x: body.x + 24, y: body.y + 16 };
+      let frame = sim.update([], null, 1 / 30);
+      const first = frame.sprites.find(p => p.sprite.startsWith("airstrike:missile:"))!;
+      directions.add(first.sprite);
+      const start = { x: first.x + 26, y: first.y + 26 };
+      expect(start.x === screen.x || start.x === screen.x + screen.w || start.y === screen.y || start.y === screen.y + screen.h).toBe(true);
+      for (let i = 0; i < 12; i++) frame = sim.update([], null, 1 / 30);
+      const next = frame.sprites.find(p => p.sprite.startsWith("airstrike:missile:"))!;
+      expect(Math.hypot(next.x + 26 - target.x, next.y + 26 - target.y)).toBeLessThan(Math.hypot(start.x - target.x, start.y - target.y));
+      expect(frame.sprites.some(p => p.sprite === "explosion:burst")).toBe(false);
+      for (const item of frame.sprites) expect(desktopAtlas()[item.sprite]).toBeDefined();
+      for (let i = 0; i < 16; i++) frame = sim.update([], null, 1 / 30);
+      expect(frame.sprites.some(p => p.sprite === "airstrike:cloud")).toBe(true);
+      expect(frame.sprites.some(p => p.sprite.startsWith("airstrike:missile:"))).toBe(false);
+      sim.setScreens([screen]);
+      expect(sim.update([], null, 1 / 30).sprites).toEqual([]);
+    }
+    expect(directions.size).toBe(4);
+  });
   test("simultaneous exits get independent provider-colored bursts", () => {
     const sim = scene();
     sim.update([session(1), session(2), session(3)], null, 1 / 30);
-    const frame = sim.update([session(3)], null, 1 / 30);
+    let frame = sim.update([session(3)], null, 1 / 30);
+    expect(frame.sprites.filter(s => s.sprite.startsWith("airstrike:missile:"))).toHaveLength(2);
+    for (let i = 0; i < 22; i++) frame = sim.update([session(3)], null, 1 / 30);
     expect(frame.sprites.filter(s => s.sprite === "explosion:burst")).toHaveLength(2);
     expect(frame.sprites.filter(s => s.sprite === "explosion:claude")).toHaveLength(8);
     expect(frame.sprites.filter(s => s.sprite === "explosion:codex")).toHaveLength(8);
@@ -290,7 +324,7 @@ describe("floating desktop scene", () => {
     sim.update([session(2)], null, 1 / 30);
     const frame = sim.update([], null, 1 / 30);
     expect(frame.sprites.some(p => p.sprite.startsWith("portal:"))).toBe(false);
-    expect(frame.sprites.some(p => p.sprite === "explosion:burst")).toBe(true);
+    expect(frame.sprites.some(p => p.sprite.startsWith("airstrike:missile:"))).toBe(true);
   });
   test("pause/reduced motion and display changes reveal arrivals without delayed portals", () => {
     const sim = scene();
