@@ -6,6 +6,8 @@
   "private": true,
   "scripts": {
     "start": "bun run src/main.ts",
+    "desktop": "bun run build:desktop && bun run src/desktop.ts",
+    "build:desktop": "bun run scripts/build-desktop.ts",
     "check": "tsc --noEmit",
     "test": "bun test",
     "build": "bun build --compile --minify src/main.ts --outfile dist/claude-office"
