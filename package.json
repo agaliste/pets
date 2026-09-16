@@ -1,12 +1,13 @@
 {
   "name": "claude-office",
   "version": "0.1.0",
-  "description": "A terminal office where a Claude mascot shows up for every running Claude Code session",
+  "description": "A terminal office with mascots for every running Claude Code and Codex CLI session",
   "type": "module",
   "private": true,
   "scripts": {
     "start": "bun run src/main.ts",
     "check": "tsc --noEmit",
+    "test": "bun test",
     "build": "bun build --compile --minify src/main.ts --outfile dist/claude-office"
   },
   "devDependencies": {

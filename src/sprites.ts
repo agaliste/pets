@@ -1,4 +1,4 @@
-// Pixel-art data: the Claude mascot, hats, ball and office props.
+// Pixel-art data: Claude and Codex mascots, hats, accessories and office props.
 // In every sprite '.' is transparent; other characters index the palette.
 
 import type { Palette, Sprite } from "./canvas.ts";
@@ -116,6 +116,27 @@ export const MASCOT = {
 
 export type MascotFrame = keyof typeof MASCOT;
 
+export const CODEX_PALETTE: Palette = {
+  "#": 0xe7edf2,
+  "=": 0x8b9ba8,
+  "o": 0x18242d,
+  "*": 0x72dfd0,
+};
+
+// A terminal-faced robot. Same footprint and hat anchor as Claude.
+const ROBOT_HEAD = ["...######...", "..########..", "..#oooooo#..", "..#o*oo*o#.."];
+export const CODEX_MASCOT: Record<MascotFrame, string[]> = {
+  stand: [...ROBOT_HEAD, ".##########.", "..##====##..", "...##..##...", "...==..==..."],
+  walkA: [...ROBOT_HEAD, ".##########.", "..##====##..", "..##....##..", "..==....==.."],
+  walkB: [...ROBOT_HEAD, ".##########.", "..##====##..", "....##.##...", "....==.==..."],
+  typeA: [...ROBOT_HEAD, ".#########..", "..##====###.", "...##..##...", "...==..==..."],
+  typeB: [...ROBOT_HEAD, "..#########.", ".###====##..", "...##..##...", "...==..==..."],
+  kick: [...ROBOT_HEAD, ".##########.", "..##====##..", "...##...####", "...==......."],
+  wave: ["...######.#.", "..#########.", "..#oooooo##.", "..#o*oo*o#..", ".#########..", "..##====##..", "...##..##...", "...==..==..."],
+  sleep: ["...######...", "..########..", "..#oooooo#..", "..#o=oo=o#..", ".##########.", "..##====##..", "...##..##...", "...==..==..."],
+  sit: [...ROBOT_HEAD, ".##########.", "..##====##..", "............", "............"],
+};
+
 export interface Hat {
   name: string;
   rows: string[]; // bottom row is drawn on the mascot's ear row
@@ -220,6 +241,55 @@ export const HATS: Hat[] = [
     "....####....",
     "..########..",
     "%##########%"),
+];
+
+export interface Accessory extends Sprite {
+  name: string;
+  // Full mascot width keeps horizontal mirroring aligned with the body.
+  // Face accessories follow each provider's eye line; clothes share an anchor.
+  y: { claude: number; codex: number };
+}
+
+export const ACCESSORIES: Accessory[] = [
+  {
+    name: "sunglasses",
+    y: { claude: 1, codex: 2 },
+    rows: [
+      ".#*##==#*##.",
+      "..###..###..",
+    ],
+    palette: { "#": 0x111111, "=": 0x343b46, "*": 0xf2f2f2 },
+  },
+  {
+    name: "round glasses",
+    y: { claude: 1, codex: 2 },
+    rows: ["..###..###..", ".#...##...#.", "..###..###.."],
+    palette: { "#": 0xe8b923 },
+  },
+  {
+    name: "neon visor",
+    y: { claude: 2, codex: 3 },
+    rows: [".##########.", ".#**%%%%**#."],
+    palette: { "#": 0x24334d, "%": 0x2bb5c8, "*": 0xb9ffff },
+  },
+  {
+    name: "eye patch",
+    y: { claude: 1, codex: 2 },
+    rows: ["..###======.", "..###......."],
+    palette: { "#": 0x111111, "=": 0x57483d },
+  },
+  {
+    name: "bow tie",
+    y: { claude: 4, codex: 4 },
+    rows: ["...##..##...", "...##**##..."],
+    palette: { "#": 0xc03068, "*": 0xf2d24a },
+  },
+  {
+    name: "striped scarf",
+    y: { claude: 4, codex: 4 },
+    rows: ["..##%%##%%..", ".......##...", ".......%%..."],
+    palette: { "#": 0x2f6fdb, "%": 0xf2d24a },
+  },
 ];
 
 export const BALL: Sprite = {

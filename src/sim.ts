@@ -1,10 +1,10 @@
-// Simulation: one mascot per Claude session, with a small behaviour state machine
+// Simulation: one mascot per Claude or Codex session, with a small behaviour state machine
 // (enter, work, wait, coffee, football, nap, plant, wander, leave) and a football.
 
 import { Canvas, mix } from "./canvas.ts";
 import type { Desk, DeskState, Drawable, Layout, Pt } from "./office.ts";
-import type { ClaudeSession } from "./sessions.ts";
-import { BALL, CUP, HATS, MASCOT, MASCOT_H, MASCOT_PALETTE, MASCOT_W, type Hat, type MascotFrame } from "./sprites.ts";
+import type { AgentSession } from "./sessions.ts";
+import { ACCESSORIES, BALL, CODEX_MASCOT, CODEX_PALETTE, CUP, HATS, MASCOT, MASCOT_H, MASCOT_PALETTE, MASCOT_W, type Accessory, type Hat, type MascotFrame } from "./sprites.ts";
 
 type Activity =
   | { kind: "walk"; to: Pt; then: Activity }
@@ -22,8 +22,9 @@ type Activity =
 
 export interface Agent {
   pid: number;
-  session: ClaudeSession;
+  session: AgentSession;
   hat: Hat;
+  accessory: Accessory;
   x: number;
   y: number;
   facing: 1 | -1;
@@ -95,7 +96,7 @@ export class Sim {
 
   // ---------------------------------------------------------------- updates
 
-  update(sessions: ClaudeSession[], now: number, dt: number): void {
+  update(sessions: AgentSession[], now: number, dt: number): void {
     const live = new Set<number>();
     for (const s of sessions) {
       live.add(s.pid);
@@ -114,14 +115,20 @@ export class Sim {
     this.stepBall(now, dt);
   }
 
-  private spawn(s: ClaudeSession, now: number): void {
+  private spawn(s: AgentSession, now: number): void {
     const used = new Set([...this.agents.values()].map((a) => a.hat.name));
     let idx = hashStr(s.sessionId ?? String(s.pid)) % HATS.length;
     for (let i = 0; i < HATS.length && used.has(HATS[idx]!.name); i++) idx = (idx + 1) % HATS.length;
+    const usedAccessories = new Set([...this.agents.values()].map((a) => a.accessory.name));
+    let accessoryIdx = hashStr(`accessory:${s.provider}:${s.sessionId ?? s.pid}`) % ACCESSORIES.length;
+    for (let i = 0; i < ACCESSORIES.length && usedAccessories.has(ACCESSORIES[accessoryIdx]!.name); i++) {
+      accessoryIdx = (accessoryIdx + 1) % ACCESSORIES.length;
+    }
     const a: Agent = {
       pid: s.pid,
       session: s,
       hat: HATS[idx]!,
+      accessory: ACCESSORIES[accessoryIdx]!,
       x: this.L.spawn.x,
       y: this.L.spawn.y,
       facing: 1,
@@ -454,9 +461,11 @@ export class Sim {
       draw: (cv: Canvas) => {
         const { frame, dy, flip } = this.frameFor(a, now);
         const yy = y + dy;
-        cv.blit({ rows: MASCOT[frame], palette: MASCOT_PALETTE }, x, yy, flip);
+        const codex = a.session.provider === "codex";
+        cv.blit({ rows: (codex ? CODEX_MASCOT : MASCOT)[frame], palette: codex ? CODEX_PALETTE : MASCOT_PALETTE }, x, yy, flip);
         const hatTop = yy - (a.hat.rows.length - 1);
         cv.blit({ rows: a.hat.rows, palette: a.hat.palette }, x, hatTop, flip);
+        cv.blit(a.accessory, x, yy + a.accessory.y[a.session.provider], flip);
         this.drawExtras(cv, a, x, yy, now);
         if (selected) {
           const row = (hatTop - 3) >> 1;

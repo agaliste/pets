@@ -1,9 +1,9 @@
-// Claude Office: a terminal office where every running Claude Code session
+// Agent Office: a terminal office where every running Claude Code or Codex CLI session
 // on this machine shows up as a mascot wearing its own hat.
 
 import { Canvas, FrameWriter } from "./canvas.ts";
 import { computeLayout, drawBackground, roomDrawables, type Drawable, type Layout } from "./office.ts";
-import { SessionTracker, type ClaudeSession } from "./sessions.ts";
+import { SessionTracker, type AgentSession } from "./sessions.ts";
 import { Sim } from "./sim.ts";
 import { Terminal, termSize } from "./term.ts";
 import { homedir } from "node:os";
@@ -97,7 +97,7 @@ class App {
     this.term.write("\x1b[2J");
   }
 
-  private sessions(): ClaudeSession[] {
+  private sessions(): AgentSession[] {
     return this.tracker.list();
   }
 
@@ -135,7 +135,7 @@ class App {
     this.term.write(this.writer.frame(cv.renderRows()));
   }
 
-  private drawStatus(cv: Canvas, sessions: ClaudeSession[], now: number): void {
+  private drawStatus(cv: Canvas, sessions: AgentSession[], now: number): void {
     const row0 = cv.rows - 2, row1 = cv.rows - 1;
     cv.fillRect(0, row0 * 2, cv.w, 4, BAR_BG);
     for (let c = 0; c < cv.cols; c++) {
@@ -144,12 +144,16 @@ class App {
     }
 
     const busy = sessions.filter((s) => s.status === "busy").length;
-    const idle = sessions.length - busy;
+    const idle = sessions.filter((s) => s.status === "idle").length;
+    const unknown = sessions.length - busy - idle;
     let col = 1;
-    cv.putText(col, row0, "Claude Office", ORANGE, BAR_BG); col += 14;
+    cv.putText(col, row0, "Agent Office", ORANGE, BAR_BG); col += 13;
     cv.putText(col, row0, "│", DIM, BAR_BG); col += 2;
     cv.putText(col, row0, `● ${busy} working`, GREEN, BAR_BG); col += `● ${busy} working`.length + 2;
     cv.putText(col, row0, `○ ${idle} idle`, DIM, BAR_BG); col += `○ ${idle} idle`.length + 2;
+    if (unknown) {
+      cv.putText(col, row0, `? ${unknown} unknown`, DIM, BAR_BG); col += `? ${unknown} unknown`.length + 2;
+    }
     if (this.layout.pitch) {
       cv.putText(col, row0, "│", DIM, BAR_BG); col += 2;
       const sc = `football ${this.sim.score.l}–${this.sim.score.r}`;
@@ -163,24 +167,26 @@ class App {
     if (err) {
       cv.putText(1, row1, fit(`detection error: ${err}`, cv.cols - keys.length - 3), RED, BAR_BG);
     } else if (sessions.length === 0) {
-      cv.putText(1, row1, fit("No Claude sessions running. Start `claude` anywhere and a mascot walks in.", cv.cols - keys.length - 3), DIM, BAR_BG);
+      cv.putText(1, row1, fit("Start `claude` or `codex` anywhere and a mascot walks in.", cv.cols - keys.length - 3), DIM, BAR_BG);
     } else {
       const a = this.selectedPid !== null ? this.sim.agents.get(this.selectedPid) : undefined;
       if (a) {
         const s = a.session;
         const parts = [
+          s.provider === "codex" ? "Codex" : "Claude",
           s.name,
           s.title ?? "",
           shortPath(s.cwd),
           s.status,
           `up ${fmtUptime(now - s.startedAt)}`,
           `${a.hat.name} hat`,
+          a.accessory.name,
           `pid ${s.pid}`,
         ].filter((p) => p.length > 0);
         cv.putText(1, row1, "▼ ", ORANGE, BAR_BG);
         cv.putText(3, row1, fit(parts.join("  ·  "), cv.cols - keys.length - 5), BAR_FG, BAR_BG);
       } else {
-        const names = sessions.map((s) => `${s.status === "busy" ? "●" : "○"} ${s.name}`).join("  ");
+        const names = sessions.map((s) => `${s.status === "busy" ? "●" : s.status === "idle" ? "○" : "?"} ${s.provider === "codex" ? "Codex" : "Claude"}: ${s.name}`).join("  ");
         cv.putText(1, row1, fit(names, cv.cols - keys.length - 3), BAR_FG, BAR_BG);
       }
     }

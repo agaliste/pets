@@ -1,4 +1,5 @@
-// Detects running Claude Code sessions anywhere on this machine.
+// Detects running Claude Code and Codex CLI sessions anywhere on this machine.
+// Codex uses live processes plus their open rollout files (never a cwd guess).
 //
 // Sources, in order of trust:
 //  1. `ps` — the authoritative list of live `claude` processes.
@@ -11,10 +12,12 @@
 import { open, readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
+import { codexIndexPath, isCodexCommand, parseCodexActivity, parseCodexFiles, parseCodexMetadata, parseCodexTitles, readChunk } from "./codex.ts";
 
 export type SessionStatus = "busy" | "idle" | "unknown";
 
-export interface ClaudeSession {
+export interface AgentSession {
+  provider: "claude" | "codex";
   pid: number;
   sessionId: string | null;
   cwd: string;
@@ -23,9 +26,11 @@ export interface ClaudeSession {
   startedAt: number; // epoch ms
   version: string | null;
   title: string | null;
-  source: "registry" | "ps";
+  source: "registry" | "ps" | "rollout";
   lastActivity: number; // epoch ms
 }
+
+export type ClaudeSession = AgentSession;
 
 const PS_INTERVAL = 2500;
 const REGISTRY_INTERVAL = 1000;
@@ -98,9 +103,15 @@ interface TitleCache {
 }
 
 export class SessionTracker {
-  private readonly claudeDir = join(homedir(), ".claude");
+  constructor(
+    private readonly runCommand: (cmd: string[]) => Promise<string> = run,
+    private readonly claudeDir = join(homedir(), ".claude"),
+  ) {}
   private sessions = new Map<number, ClaudeSession>();
   private livePids = new Set<number>();
+  private codexPids = new Map<number, number>(); // pid -> process start time
+  private codexRollouts = new Map<number, { path: string; mtime: number; size: number }>();
+  private codexTitles = new Map<string, { at: number; titles: Map<string, string> }>();
   private lastPs = 0;
   private lastRegistry = 0;
   private cwdCache = new Map<number, string>();
@@ -125,6 +136,7 @@ export class SessionTracker {
       if (now - this.lastRegistry >= REGISTRY_INTERVAL) {
         this.lastRegistry = now;
         await this.readRegistry(now);
+        await this.readCodexSessions(now);
         await this.refreshTitles(now);
       }
       this.lastError = null;
@@ -136,24 +148,33 @@ export class SessionTracker {
   }
 
   private async scanProcesses(): Promise<void> {
-    const out = await run(["ps", "-axo", "pid=,command="]);
+    const out = await this.runCommand(["ps", "-axo", "pid=,ppid=,etime=,command="]);
+    if (!out.trim()) throw new Error("Unable to read the process list");
     const pids = new Set<number>();
+    const codex = new Map<number, { parent: number; startedAt: number; wrapper: boolean }>();
     for (const raw of out.split("\n")) {
-      const line = raw.trim();
-      if (!line) continue;
-      const sp = line.indexOf(" ");
-      if (sp < 0) continue;
-      const pid = Number(line.slice(0, sp));
+      const match = raw.match(/^\s*(\d+)\s+(\d+)\s+([\d:-]+)\s+(.+)$/);
+      if (!match) continue;
+      const pid = Number(match[1]);
       if (!Number.isFinite(pid) || pid === process.pid) continue;
-      const argv = line.slice(sp + 1).trim().split(/\s+/);
+      const argv = match[4]!.trim().split(/\s+/);
       if (isClaudeCommand(argv)) pids.add(pid);
+      else if (isCodexCommand(argv)) {
+        const [days, clock] = match[3]!.includes("-") ? match[3]!.split("-") : ["0", match[3]!];
+        const seconds = clock!.split(":").reduce((total, part) => total * 60 + Number(part), 0) + Number(days) * 86400;
+        codex.set(pid, { parent: Number(match[2]), startedAt: Date.now() - seconds * 1000, wrapper: basename(argv[0]!) !== "codex" });
+      }
     }
+    // npm's node wrapper stays alive while its native Codex child runs.
+    const wrappers = new Set([...codex.values()].map((p) => p.parent));
+    this.codexPids = new Map([...codex].filter(([pid, p]) => !p.wrapper || !wrappers.has(pid)).map(([pid, p]) => [pid, p.startedAt]));
     this.livePids = pids;
     for (const pid of [...this.sessions.keys()]) {
-      if (!pids.has(pid)) {
+      if (!pids.has(pid) && !this.codexPids.has(pid)) {
         this.sessions.delete(pid);
         this.cwdCache.delete(pid);
         this.titles.delete(pid);
+        this.codexRollouts.delete(pid);
       }
     }
   }
@@ -182,6 +203,7 @@ export class SessionTracker {
       const status: SessionStatus = entry.status === "busy" ? "busy" : entry.status === "idle" ? "idle" : "unknown";
       const prev = this.sessions.get(entry.pid);
       this.sessions.set(entry.pid, {
+        provider: "claude",
         pid: entry.pid,
         sessionId: entry.sessionId ?? prev?.sessionId ?? null,
         cwd,
@@ -199,7 +221,7 @@ export class SessionTracker {
     const orphans = [...this.livePids].filter((pid) => !seen.has(pid));
     const needCwd = orphans.filter((pid) => !this.cwdCache.has(pid));
     if (needCwd.length > 0) {
-      const out = await run(["lsof", "-a", "-p", needCwd.join(","), "-d", "cwd", "-Fpn"]);
+      const out = await this.runCommand(["lsof", "-a", "-p", needCwd.join(","), "-d", "cwd", "-Fpn"]);
       let cur = -1;
       for (const line of out.split("\n")) {
         if (line.startsWith("p")) cur = Number(line.slice(1));
@@ -213,6 +235,7 @@ export class SessionTracker {
       const activity = await this.newestTranscriptMtime(cwd);
       const status: SessionStatus = activity > 0 ? (now - activity < 20_000 ? "busy" : "idle") : "unknown";
       this.sessions.set(pid, {
+        provider: "claude",
         pid,
         sessionId: null,
         cwd,
@@ -224,6 +247,56 @@ export class SessionTracker {
         source: "ps",
         lastActivity: activity,
       });
+    }
+  }
+
+  private async readCodexSessions(now: number): Promise<void> {
+    if (this.codexPids.size === 0) return;
+    const files = parseCodexFiles(await this.runCommand(["lsof", "-a", "-p", [...this.codexPids.keys()].join(","), "-Fpfn"]));
+    for (const [pid, startedAt] of this.codexPids) {
+      const opened = files.get(pid);
+      const prev = this.sessions.get(pid);
+      // Never choose arbitrarily between multiple transcripts (e.g. subagents).
+      const path = opened?.rollouts.length === 1 ? opened.rollouts[0] : undefined;
+      const cwd = opened?.cwd ?? prev?.cwd ?? "?";
+      let session: AgentSession = {
+        provider: "codex", pid, sessionId: null, cwd,
+        name: basename(cwd) || "codex", status: "unknown",
+        startedAt: prev?.startedAt ?? startedAt, version: null, title: null,
+        source: "ps", lastActivity: 0,
+      };
+      if (path) {
+        try {
+          const st = await stat(path);
+          const cached = this.codexRollouts.get(pid);
+          if (prev && cached?.path === path && cached.mtime === st.mtimeMs && cached.size === st.size) {
+            session = { ...prev };
+          } else {
+            const meta = parseCodexMetadata(await readChunk(path, HEAD_BYTES));
+            const activity = parseCodexActivity(await readChunk(path, TAIL_BYTES, true));
+            if (meta) {
+              session = { ...session, ...meta, ...activity, name: basename(meta.cwd) || "codex", source: "rollout" };
+              // A resumed process may still hold an interrupted turn from an old run.
+              if (session.status === "busy" && session.lastActivity < startedAt - 2000) session.status = "unknown";
+              this.codexRollouts.set(pid, { path, mtime: st.mtimeMs, size: st.size });
+            }
+          }
+          const index = codexIndexPath(path);
+          if (index && session.sessionId) {
+            let titles = this.codexTitles.get(index);
+            if (!titles || now - titles.at >= TITLE_INTERVAL_MISSING) {
+              const chunk = await readChunk(index, TAIL_BYTES, true).catch(() => "");
+              titles = { at: now, titles: parseCodexTitles(chunk) };
+              this.codexTitles.set(index, titles);
+            }
+            session.title = titles.titles.get(session.sessionId) ?? null;
+          }
+        } catch {
+          // Missing/inaccessible metadata does not hide an authoritative live PID.
+          this.codexRollouts.delete(pid);
+        }
+      } else this.codexRollouts.delete(pid);
+      this.sessions.set(pid, session);
     }
   }
 
@@ -253,6 +326,7 @@ export class SessionTracker {
   }
 
   private transcriptPath(s: ClaudeSession): string | null {
+    if (s.provider !== "claude") return null;
     if (!s.sessionId || s.cwd === "?") return null;
     return join(this.claudeDir, "projects", encodeProjectDir(s.cwd), `${s.sessionId}.jsonl`);
   }
