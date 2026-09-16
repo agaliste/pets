@@ -91,8 +91,12 @@ access, the menu status should say **Typing combat ready**. No Apple Developer
 account is needed. A rebuilt locally signed binary may need permission granted
 again; follow the process name shown by macOS rather than guessing the owner.
 
-The listener counts nonrepeating key-down events, excluding Command and Control
-shortcuts. Regular editing keys can count too; held keys cannot generate a
+The listener counts nonrepeating presses of letter and number keys (including
+keypad digits), Space, and Return/Enter, excluding Command and Control shortcuts.
+Arrows, function keys, Escape, Tab, Backspace/Delete, punctuation keys, and other
+keys do not count toward combat or typing history. The filter uses physical ANSI
+key positions, not the characters produced by the active keyboard layout;
+Shift/Option do not change which positions count. Held keys cannot generate a
 combo. Keep the gaps between strikes below **1.4 seconds** to maintain a streak.
 
 | Hits | Callout | Attack progression |
@@ -117,7 +121,8 @@ moves below the anchor near the top edge and stays inside the current display.
 There is no continuous mouse tracking; the pointer is sampled during typing.
 
 The native listener is **passive** and does not consume, change, or synthesize
-keystrokes. It does not read characters, key codes, field values, selected text,
+keystrokes. It reads key codes only to filter typing keys and never stores or
+transmits those codes. It does not read characters, field values, selected text,
 or clipboard contents. Only bounded event timestamps and the caret/pointer
 position pass through the local pipe. Anonymous event times and typing statistics
 are saved locally as described below; caret/pointer positions are never saved.
