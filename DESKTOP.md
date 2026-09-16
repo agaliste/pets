@@ -119,7 +119,9 @@ There is no continuous mouse tracking; the pointer is sampled during typing.
 The native listener is **passive** and does not consume, change, or synthesize
 keystrokes. It does not read characters, key codes, field values, selected text,
 or clipboard contents. Only bounded event timestamps and the caret/pointer
-position pass through the local pipe; they are not saved or sent over the network.
+position pass through the local pipe. Anonymous event times and typing statistics
+are saved locally as described below; caret/pointer positions are never saved.
+Typing data is never sent over the network.
 Caret access reads selection metadata and geometry, not the document's content.
 Effects are suppressed while macOS Secure Input is active and when the focused
 element identifies itself as a secure text field. The app never bypasses Secure
@@ -130,15 +132,75 @@ Use **Disable typing combat** to remove the listener for the current run.
 Pause, Hide, menu interaction, switching applications, and monitor changes reset
 the combo. macOS Reduce Motion preserves a static fighter/counter without lunges,
 sparks, or bouncing labels. The menu shows permission failures; quitting removes
-the event tap. Enable/disable and combo state are not saved between runs. On the
+the event tap. Enable/disable and the active visual combo are not saved between runs.
+Typing history, combo records and achievements persist across restarts. On the
 next launch combat starts automatically only if both permissions are available.
+
+## Typing history and achievements
+
+Open **⚽ → Stats & Achievements…** for lifetime totals, today's activity,
+keystrokes by hour, the last 30 calendar days, the ten latest combos, and an
+achievement collection with locked/unlocked filters and progress. The window
+refreshes once per second while open. Unlocks show a quiet five-second desktop
+notification without stealing focus or playing a sound.
+
+History is stored in **`~/Library/Application Support/pets/typing.sqlite`** using
+Bun's built-in SQLite driver. The directory is private to your user (0700), and
+the database is 0600. SQLite may also create `-wal` and `-shm` files there.
+No extra dependency, service or permission is needed beyond typing combat.
+
+- `key_events` stores one row per delivered, valid, monitored key pulse: native
+  capture time in Unix milliseconds (including fractional milliseconds), plus
+  the local UTC offset at capture. It never stores characters, key codes,
+  applications, window titles, caret positions, or clipboard content.
+- `combos` stores start/last-hit timestamps and an uncapped hit count. A streak
+  qualifies once it reaches **5 accepted combat hits**, counts **once**, and ends
+  on a gap **greater than 1.4 seconds** or an existing combat reset. A growing
+  qualifying streak is updated in place, preserving its latest committed count
+  even if pets stops unexpectedly. Restarting begins a new streak.
+- The visual fighter retains its 999-hit display cap. Statistics continue above
+  999. Its existing 18 ms hit filter can reject a very fast pulse; that pulse
+  still counts as a keystroke in history.
+- Indexed minute/day/hour summaries and lifetime totals are updated in the same
+  transaction as events and combo records. Charts do not scan every raw event.
+  Hour/day grouping uses **local time at capture**, even if the Bun process uses
+  a different timezone. Travelling does not rebucket older records. A combo
+  crossing midnight belongs to its starting day; keystrokes belong to their
+  individual capture days. Active minutes are calendar minutes containing a
+  pulse, not a measurement of uninterrupted work. Blank chart days mean **no
+  recorded activity**, not proof that you did not type.
+- **50 achievements** cover lifetime keystrokes (100–10 million), qualifying
+  combos (1–50,000, including **10,000 combos**), longest combo (5–2,500), active
+  days, consecutive active days, active minutes, daily records and minute
+  records. Unlocks persist once, using stable IDs. Minute records are key counts,
+  not words per minute. Badges have no effect on pets or permissions.
+
+History begins with the first observed key; older activity cannot be recovered.
+The existing listener boundaries remain: monitoring must be enabled and granted,
+held-key repeats and Command/Control shortcuts are excluded, Secure Input and
+reported secure fields suppress capture, and Pause/Hide/menu interaction suspend
+it. Batches are bounded to 32 pulses and events delayed 500 ms or more are ignored,
+so this is an activity record, not a guarantee of every physical key press.
+
+Writes use short, atomic SQLite transactions. A storage failure stops history
+recording and displays the error in the football menu and stats window; the pets
+continue running. Resolve the disk/access problem and use **Refresh** to reopen
+history. Unrecorded events during an error are not backfilled. A newer database
+schema is refused without deleting it.
+
+**Reset history…** asks for confirmation, then clears timestamps, summaries,
+combos and achievements together and resets the current streak. It cannot be
+undone. Deleted records are cleared with SQLite secure-delete and a WAL
+checkpoint; filesystem/backup copies are outside this reset. There is no automatic
+retention cutoff: individual timestamps remain until you reset history. Run only
+one desktop instance at a time to avoid counting the same input more than once.
 
 ## Implementation and checks
 
 `src/desktop.ts` reuses `SessionTracker` and `MusicTracker`. It sends sprite
 placements and lyric text over the native child's stdin; the child returns
 display geometry, typing pulses, and menu choices over stdout. There is no local
-server, new network integration, persistent session cache, or screen capture.
+server, new network integration, persistent agent-session cache, or screen capture.
 Only typing combat uses keyboard monitoring and Accessibility.
 
 `src/desktop-scene.ts` owns the independently testable movement and football.
@@ -152,7 +214,9 @@ overlay. Nothing is installed as a login item or service.
 `desktop/TypingInput.swift` owns permission checks, the listen-only event tap,
 bounded asynchronous caret queries, secure-input suppression, and cleanup.
 `src/combat.ts` owns combo timing, attack poses, and bitmap lettering, with no
-keyboard/content API access. `desktop/main.swift` is the native entry point.
+keyboard/content API access. `desktop/main.swift` is the native entry point. `src/typing-stats.ts` owns SQLite
+history and rollups; `src/achievements.ts` owns stable milestone definitions.
+`desktop/StatsWindow.swift` owns the native SwiftUI stats window and unlock notices.
 
 ```sh
 bun test
@@ -183,6 +247,17 @@ Manual verification (run the app yourself):
    shortcuts, app switching, and a secure text field using dummy text only.
 9. Disable typing combat and verify that new typing no longer causes effects;
    check reduced motion, denied/revoked permissions, and quit cleanup.
+
+10. Open Stats & Achievements, type a five-hit streak in another app, then verify
+    the key and combo totals, achievement progress and a nonactivating unlock notice.
+11. Quit/restart and verify that history/unlocks persist without replaying notices;
+    test a 1,000+ hit streak and compare its record with the capped visual counter.
+12. Check Activity/Achievements, filters, Refresh, keyboard navigation, VoiceOver,
+    the narrowest window, scrolling, and Cancel in the reset confirmation. Only
+    confirm Reset history if you want to delete the collected test history.
+13. Verify Pause/Hide, disabled monitoring and a secure dummy field add no events.
+    Check hour/day grouping against the Mac's local time, including a midnight
+    boundary when practical.
 
 Live appearance, caret support, input permissions, focus behavior, full-screen
 visibility, and Automation dialogs cannot be established by compilation or the

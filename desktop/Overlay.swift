@@ -16,6 +16,9 @@ struct Message: Decodable {
     var status: String?
     var combat: [SpritePlacement]?
     var quotaRequest: Int?
+    var stats: TypingStatsResponse?
+    var typingStatsStatus: String?
+    var achievementNotice: AchievementNotice?
 }
 
 // Coalesce frames if the main thread is busy (e.g. tracking a menu). No stale-frame backlog.
@@ -23,19 +26,22 @@ final class Inbox {
     private let lock = NSLock()
     private var setup: Message?
     private var frame: Message?
+    private var stats: Message?
     private var scheduled = false
 
     func submit(_ message: Message, deliver: @escaping (Message) -> Void) {
         lock.lock()
-        if message.type == "setup" { setup = message } else { frame = message }
+        if message.type == "setup" { setup = message }
+        else if message.type == "stats" { stats = message }
+        else { frame = message }
         let needsDispatch = !scheduled
         scheduled = true
         lock.unlock()
         guard needsDispatch else { return }
         DispatchQueue.main.async { [self] in
             lock.lock()
-            let messages = [setup, frame].compactMap { $0 }
-            setup = nil; frame = nil; scheduled = false
+            let messages = [setup, stats, frame].compactMap { $0 }
+            setup = nil; stats = nil; frame = nil; scheduled = false
             lock.unlock()
             for message in messages { deliver(message) }
         }
@@ -134,6 +140,7 @@ final class Overlay: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var lastQuotaRequest = 0
     private let inbox = Inbox()
     private let typing = TypingInput()
+    private let statsWindow = StatsWindowController()
 
     func theme(_ name: String) -> NSColor { color(colors[name] ?? 0xffffff) }
 
@@ -146,10 +153,17 @@ final class Overlay: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.delegate = self
         status.menu = menu
         statusItem = status
+        statsWindow.model.request = { [weak self] action in self?.emit(["type": action]) }
+        statsWindow.onVisibility = { [weak self] visible in self?.emit(["type": "statsVisibility", "visible": visible]) }
         rebuildScreens()
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(accessibilityChanged), name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
         sendOptions()
-        typing.onTyping = { [weak self] ages, point in self?.emit(["type": "typing", "ages": ages, "x": point.x, "y": point.y]) }
+        typing.onTyping = { [weak self] pulses, point in
+            let now = ProcessInfo.processInfo.systemUptime
+            self?.emit(["type": "typing", "ages": pulses.map { (now - $0.uptime) * 1000 },
+                        "timestamps": pulses.map(\.wallTime), "offsets": pulses.map(\.utcOffsetMinutes),
+                        "x": point.x, "y": point.y])
+        }
         typing.onReset = { [weak self] in self?.emit(["type": "combatReset"]) }
         typing.onStatus = { [weak self] status, enabled in self?.emit(["type": "combatStatus", "status": status, "enabled": enabled]) }
         typing.start()
@@ -193,6 +207,8 @@ final class Overlay: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
                 images[id] = image
             }
+        } else if message.type == "stats", let stats = message.stats {
+            statsWindow.receive(stats)
         } else if message.type == "frame" {
             if let request = message.quotaRequest, request != lastQuotaRequest {
                 lastQuotaRequest = request
@@ -205,6 +221,7 @@ final class Overlay: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 emit(["type": "quotaScreen", "request": request, "screen": view?.screenID ?? ""])
             }
             frame = message
+            statsWindow.showNotice(message.achievementNotice, colors: colors, suppressed: paused || hidden)
             statusItem?.button?.toolTip = "pets · \(message.status ?? "")"
             if !hidden { for panel in panels { panel.contentView?.needsDisplay = true } }
         }
@@ -265,6 +282,9 @@ final class Overlay: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(withTitle: typing.status, action: nil, keyEquivalent: "")
         let combat = menu.addItem(withTitle: typing.enabled ? "Disable typing combat" : "Enable typing combat…", action: #selector(toggleCombat), keyEquivalent: "")
         combat.target = self
+        menu.addItem(withTitle: frame?.typingStatsStatus ?? "Typing history connecting…", action: nil, keyEquivalent: "")
+        let stats = menu.addItem(withTitle: "Stats & Achievements…", action: #selector(showStats), keyEquivalent: "")
+        stats.target = self
         menu.addItem(.separator())
         let pause = menu.addItem(withTitle: paused ? "Resume movement" : "Pause movement", action: #selector(togglePause), keyEquivalent: "")
         pause.target = self
@@ -278,6 +298,7 @@ final class Overlay: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuDidClose(_ menu: NSMenu) { typing.suspended = paused || hidden }
 
     @objc private func toggleCombat() { if typing.enabled { typing.disable() } else { typing.enableWithPermission() } }
+    @objc private func showStats() { statsWindow.show(colors: colors) }
     @objc private func togglePause() { paused.toggle(); typing.suspended = paused || hidden; sendOptions() }
     @objc private func toggleHidden() {
         hidden.toggle()
@@ -291,7 +312,9 @@ final class Overlay: NSObject, NSApplicationDelegate, NSMenuDelegate {
         emit(["type": "options", "paused": paused, "hidden": hidden, "reducedMotion": NSWorkspace.shared.accessibilityDisplayShouldReduceMotion])
     }
     private func emit(_ value: [String: Any]) {
-        guard let data = try? JSONSerialization.data(withJSONObject: value) else { return }
+        var message = value
+        message["utcOffsetMinutes"] = TimeZone.current.secondsFromGMT() / 60
+        guard let data = try? JSONSerialization.data(withJSONObject: message) else { return }
         FileHandle.standardOutput.write(data + Data([10]))
     }
 }

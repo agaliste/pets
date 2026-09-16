@@ -34,6 +34,15 @@ Detection is read-only and requires no hooks or Codex configuration changes.
 Codex rollout files are an internal format; unrecognized metadata may result
 in unknown status. Desktop/app-server conversations are outside this tool's scope.
 
+## Desktop typing stats
+
+Desktop mode includes local SQLite typing history and **50 achievements**.
+Open **⚽ → Stats & Achievements…** to see hourly/daily activity, typing totals,
+combo records and achievement progress. A combo is one streak of at least five
+hits; longest-streak statistics continue beyond the visual 999-hit cap.
+Only anonymous timing data is saved, never typed text. See [DESKTOP.md](DESKTOP.md)
+for startup, monitoring boundaries, database location and reset controls.
+
 ## Checks and build
 
 ```sh

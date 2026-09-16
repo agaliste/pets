@@ -5,8 +5,9 @@ import { SessionTracker } from "./sessions.ts";
 import { MUSIC_COLORS } from "./singer.ts";
 import { QuotaTracker, QuotaAlerts, quotaAtlas, type QuotaChange } from "./quota.ts";
 import { combatAtlas, TypingCombat } from "./combat.ts";
+import { TypingStats, type TypingPulse } from "./typing-stats.ts";
 
-/** Private, local pipe protocol. Neither process opens a port or persists session data. */
+/** Private local pipe; only anonymous typing history is persisted, never agent session data. */
 export async function startDesktop(): Promise<void> {
   if (process.platform !== "darwin") throw new Error("Desktop mode requires macOS.");
   const nativePath = join(import.meta.dir, "../dist/pets-desktop-overlay");
@@ -17,6 +18,21 @@ export async function startDesktop(): Promise<void> {
   const combat = new TypingCombat();
   const quotas = new QuotaTracker();
   const quotaAlerts = new QuotaAlerts();
+  let stats: TypingStats | undefined;
+  let statsError: string | undefined;
+  let statsVisible = false, lastStatsSent = -Infinity;
+  let utcOffsetMinutes: number | undefined;
+  let achievementNotice: { id: string; title: string; count: number; expires: number } | undefined;
+  const statsFailed = (error: unknown): void => {
+    statsError = `Typing history is not recording: ${String(error)}. Open Stats & Achievements and Refresh to retry.`;
+    console.error(statsError);
+    try { stats?.close(); } catch { /* Preserve the original storage error. */ }
+    stats = undefined;
+  };
+  const openStats = (): void => {
+    try { stats = new TypingStats(); statsError = undefined; }
+    catch (error) { statsFailed(error); }
+  };
   let pendingQuotas: QuotaChange[] = [];
   let quotaRequest = 0;
   const native = Bun.spawn([nativePath], { stdin: "pipe", stdout: "pipe", stderr: "inherit" });
@@ -30,6 +46,7 @@ export async function startDesktop(): Promise<void> {
     closed = true;
     clearInterval(timer);
     music.stop();
+    try { stats?.close(); } catch (error) { console.error("Closing typing history:", error); }
     native.stdin.end();
     native.kill();
   };
@@ -44,6 +61,13 @@ export async function startDesktop(): Promise<void> {
     native.stdin.write(JSON.stringify(message) + "\n");
     await native.stdin.flush();
   };
+  const sendStats = async (message?: string): Promise<void> => {
+    let snapshot;
+    try { snapshot = stats?.snapshot(Date.now(), utcOffsetMinutes); } catch (error) { statsFailed(error); }
+    await send({ type: "stats", stats: { snapshot, error: statsError, message } });
+    lastStatsSent = performance.now();
+  };
+  const resetCombat = (): void => { combat.reset(); stats?.resetCombo(); };
   const readEvents = async (): Promise<void> => {
     const decoder = new TextDecoder();
     let buffer = "";
@@ -56,31 +80,60 @@ export async function startDesktop(): Promise<void> {
         if (!line) continue;
         const event = JSON.parse(line) as {
           type: string; screens?: Screen[]; paused?: boolean; reducedMotion?: boolean; hidden?: boolean;
-          ages?: number[]; x?: number; y?: number; request?: number; screen?: string;
+          ages?: number[]; x?: number; y?: number; request?: number; screen?: string; visible?: boolean;
+          utcOffsetMinutes?: number;
+          timestamps?: number[]; offsets?: number[];
         };
+        if (Number.isInteger(event.utcOffsetMinutes) && Math.abs(event.utcOffsetMinutes!) <= 14 * 60) utcOffsetMinutes = event.utcOffsetMinutes;
         if (event.type === "screens" && Array.isArray(event.screens)) scene.setScreens(event.screens);
         if (event.type === "quotaScreen" && event.request === quotaRequest && pendingQuotas.length) {
           if (!paused && !hidden && typeof event.screen === "string") quotaAlerts.show(pendingQuotas, event.screen, performance.now());
           pendingQuotas = [];
         }
-        if (event.type === "combatReset") combat.reset();
+        if (event.type === "statsVisibility") statsVisible = event.visible === true;
+        if (event.type === "statsRequest") {
+          if (!stats) { resetCombat(); openStats(); }
+          await sendStats();
+        }
+        if (event.type === "statsReset") {
+          try { stats?.clear(); resetCombat(); achievementNotice = undefined; }
+          catch (error) { statsFailed(error); }
+          await sendStats(statsError ? undefined : "History reset. Your next keystroke starts a fresh history.");
+        }
+        if (event.type === "combatReset") resetCombat();
         if (event.type === "typing" && !paused && !hidden && Array.isArray(event.ages) &&
             typeof event.x === "number" && typeof event.y === "number") {
           const received = performance.now();
-          for (const age of event.ages.slice(0, 32)) {
-            if (Number.isFinite(age) && age >= 0 && age < 500) combat.hit(received - age, { x: event.x, y: event.y });
+          const pulses: TypingPulse[] = [];
+          for (const [index, age] of event.ages.slice(0, 32).entries()) {
+            if (Number.isFinite(age) && age >= 0 && age < 500 && Number.isFinite(event.x) && Number.isFinite(event.y)) {
+              const monotonic = received - age;
+              const comboHit = combat.hit(monotonic, { x: event.x, y: event.y });
+              const at = event.timestamps?.[index], offset = event.offsets?.[index];
+              if (typeof at === "number" && Number.isFinite(at) && at >= 0 &&
+                  typeof offset === "number" && Number.isInteger(offset) && Math.abs(offset) <= 14 * 60) {
+                pulses.push({ at, monotonic, comboHit, utcOffsetMinutes: offset });
+              }
+            }
           }
+          try {
+            const unlocked = stats?.record(pulses) ?? [];
+            if (unlocked.length) {
+              achievementNotice = { id: crypto.randomUUID(), title: unlocked[0]!.title, count: unlocked.length, expires: received + 5_000 };
+            }
+          } catch (error) { statsFailed(error); }
         }
         if (event.type === "options") {
           paused = event.paused === true;
           reducedMotion = event.reducedMotion === true;
           hidden = event.hidden === true;
-          if (paused || hidden) { combat.reset(); quotaAlerts.clear(); pendingQuotas = []; }
+          if (paused || hidden) { resetCombat(); quotaAlerts.clear(); pendingQuotas = []; achievementNotice = undefined; }
         }
       }
     }
   };
   try {
+    openStats();
     await send({ type: "setup", atlas: { ...desktopAtlas(), ...combatAtlas(), ...quotaAtlas() }, pixel: PIXEL, colors: MUSIC_COLORS });
     const events = readEvents();
     // Attach the rejection handler immediately, including during the initial process scan.
@@ -95,6 +148,7 @@ export async function startDesktop(): Promise<void> {
         if (still && now - lastSent < 250) return;
         lastSent = now;
         previous = now;
+        if (statsVisible && now - lastStatsSent >= 1_000) await sendStats();
         void sessions.poll(Date.now()).catch(error => { console.error("Session scan:", error); });
         void music.poll();
         void quotas.poll().then(changes => {
@@ -105,6 +159,8 @@ export async function startDesktop(): Promise<void> {
         const frame = scene.update(sessions.list(), music.view(), dt, paused || reducedMotion || hidden);
         frame.status = `${sessions.lastError ?? music.lastError ?? frame.status} · ${quotas.status}`;
         await send({ ...frame,
+          typingStatsStatus: statsError ?? "Typing history ready · Stats & Achievements…",
+          achievementNotice: achievementNotice && now < achievementNotice.expires ? achievementNotice : undefined,
           quotaRequest: pendingQuotas.length ? quotaRequest : undefined,
           combat: paused || hidden ? [] : [...combat.render(now, scene.screens, reducedMotion), ...quotaAlerts.render(now, scene.screens, reducedMotion)],
         });

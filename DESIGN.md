@@ -170,8 +170,9 @@ runtime boundaries, and the manual verification matrix.
 
 The approved typing interaction uses passive keyboard timing and Accessibility
 caret geometry, with mouse-pointer fallback. Its privacy boundary is explicit:
-no key text/codes, field values, document content, clipboard, persistent input
-history, or network transmission. The menu owns enable/disable and permission
+no key text/codes, field values, document content, clipboard, or network
+transmission. The approved typing history persists only anonymous event times,
+local UTC offsets, combo records, summaries, and achievement unlocks. The menu owns enable/disable and permission
 status. Secure Input is respected; reported secure text fields suppress effects.
 The native hook never changes or swallows input, and caret queries run off the
 main thread with bounded timeouts.
@@ -207,3 +208,40 @@ Motion removes both. Pause/Hide suppress alerts, and unknown/missing/stale quota
 never become zero. The native menu retains the latest status after alerts expire.
 The snapshot is the only usage integration; no credentials or quota history are
 written, and no direct provider API is contacted.
+
+### Typing stats and achievements
+
+The approved history lives in local SQLite, with one timestamp per monitored key
+and one record per qualifying streak (at least five hits). Keep the desktop
+unobstructed: **Stats & Achievements…** opens a separate, user-activated native
+window from the football menu. Its signature is a small keyboard arcade record
+book: a monospaced score grid, a 24-hour rhythm strip and a persistent trophy
+collection. Reuse the existing background, cream text, muted labels and blue
+accent; no new palette, remote fonts, web server or web routes.
+
+`MUSIC_COLORS` → setup pipe → `StatsModel.colors` owns the SwiftUI color adapter.
+System typography handles prose and native controls; system monospaced typography
+handles scores, hour labels and the arcade caption. `StatsWindowController` owns
+window lifecycle and nonactivating, static five-second unlock notices. SwiftUI
+owns buttons, segmented tabs, native picker menus, keyboard focus, scrollbars,
+progress semantics and the reset alert. Existing `Overlay` owns the entry menu
+and private pipe. `StatsView` owns the bounded 30-day chart, 24-hour chart,
+ten-combo list and finite 50-item achievement collection; numeric chart values
+are available through accessibility labels and help. Color is not the only way
+to distinguish a locked badge from an unlocked one.
+
+Activity and Achievements share one vertical content scroller and retain tab /
+filter selection within the window session. The day chart has horizontal scroll
+ownership. The window resizes to a 590×480-point minimum. Header/actions stay in
+place while history loads, with an inline progress indicator. Empty states
+explain how to begin collecting history. Failures name the storage problem and
+keep Refresh available. Confirmation names all reset data, warns that it cannot
+be undone, and defaults to Cancel; no success is shown before the database reply.
+UI copy is English; capture-time local offsets define historical hour/day bins,
+while native date formatting presents record timestamps in the Mac's timezone.
+The achievement list remains the durable record after transient notices expire.
+
+`src/typing-stats.test.ts` verifies records, rollups, unlock persistence, reset and
+failure rollback with isolated databases. TypeScript checks and native compilation
+verify integration statically. The user's no-app-launch rule leaves visual,
+VoiceOver, focus and permission verification to the manual checks in DESKTOP.md.

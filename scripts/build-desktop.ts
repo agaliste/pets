@@ -7,6 +7,7 @@ await mkdir(join(root, "dist"), { recursive: true });
 const result = Bun.spawnSync([
   "xcrun", "swiftc", "-O", "-swift-version", "5", "-framework", "AppKit",
   join(root, "desktop/main.swift"), join(root, "desktop/Overlay.swift"), join(root, "desktop/TypingInput.swift"),
+  join(root, "desktop/StatsWindow.swift"),
   "-o", join(root, "dist/pets-desktop-overlay"),
 ], { stdout: "inherit", stderr: "inherit" });
 if (result.exitCode !== 0) {

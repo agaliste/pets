@@ -2,9 +2,15 @@ import AppKit
 import ApplicationServices
 import Carbon
 
+struct CapturedTypingPulse {
+    let uptime: Double
+    let wallTime: Double
+    let utcOffsetMinutes: Int
+}
+
 /// Passive typing pulses plus caret geometry. Never reads event characters or field text.
 final class TypingInput: NSObject {
-    var onTyping: (([Double], NSPoint) -> Void)?
+    var onTyping: (([CapturedTypingPulse], NSPoint) -> Void)?
     var onReset: (() -> Void)?
     var onStatus: ((String, Bool) -> Void)?
     private(set) var enabled = false
@@ -14,7 +20,7 @@ final class TypingInput: NSObject {
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
     private var timer: Timer?
-    private var pending: [Double] = []
+    private var pending: [CapturedTypingPulse] = []
     private var scheduled = false
     private var resolving = false
     private var generation = 0
@@ -108,8 +114,14 @@ final class TypingInput: NSObject {
 
     private func keyPulse() {
         guard enabled, !suspended, !IsSecureEventInputEnabled() else { return }
-        // Bounded in-memory timestamps only. A held key cannot manufacture a combo.
-        if pending.count < 32 { pending.append(ProcessInfo.processInfo.systemUptime) }
+        // Capture timing only; never read a key code or typed character.
+        // The batch is released only after the existing secure-field checks succeed.
+        if pending.count < 32 {
+            let date = Date()
+            pending.append(CapturedTypingPulse(uptime: ProcessInfo.processInfo.systemUptime,
+                wallTime: date.timeIntervalSince1970 * 1000,
+                utcOffsetMinutes: TimeZone.current.secondsFromGMT(for: date) / 60))
+        }
         schedule()
     }
 
@@ -145,9 +157,7 @@ final class TypingInput: NSObject {
                       pid == NSWorkspace.shared.frontmostApplication?.processIdentifier else { return }
                 if result.secure { self.clear(); return }
                 let anchor = result.rect.map { NSPoint(x: $0.midX, y: top - primaryTop + $0.minY) } ?? fallback
-                let now = ProcessInfo.processInfo.systemUptime
-                // Send event ages, not an absolute clock from a different runtime.
-                self.onTyping?(times.map { (now - $0) * 1000 }, anchor)
+                self.onTyping?(times, anchor)
             }
         }
     }
