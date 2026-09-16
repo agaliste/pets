@@ -7,6 +7,8 @@ import { SessionTracker, type AgentSession } from "./sessions.ts";
 import { Sim } from "./sim.ts";
 import { Terminal, termSize } from "./term.ts";
 import { homedir } from "node:os";
+import { MusicTracker } from "./music.ts";
+import { Singer } from "./singer.ts";
 
 const FPS = 12;
 const STATUS_ROWS = 2;
@@ -39,6 +41,8 @@ function fit(s: string, width: number): string {
 class App {
   private term = new Terminal();
   private tracker = new SessionTracker();
+  private music = new MusicTracker();
+  private singer = new Singer();
   private layout: Layout;
   private canvas: Canvas;
   private writer = new FrameWriter();
@@ -83,6 +87,7 @@ class App {
   }
 
   private quit(): void {
+    this.music.stop();
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     this.term.stop();
@@ -117,6 +122,7 @@ class App {
     this.tick++;
 
     void this.tracker.poll(now);
+    void this.music.poll();
     const sessions = this.sessions();
     this.sim.update(sessions, now, dt);
     if (this.selectedPid !== null && !this.sim.agents.has(this.selectedPid)) this.selectedPid = null;
@@ -130,6 +136,7 @@ class App {
     ];
     drawables.sort((a, b) => a.depth - b.depth);
     for (const d of drawables) d.draw(cv);
+    this.singer.draw(cv, L, this.music.view(), this.sim.agents.values(), nowPerf, dt);
     this.drawStatus(cv, sessions, now);
 
     this.term.write(this.writer.frame(cv.renderRows()));
@@ -163,9 +170,9 @@ class App {
     cv.putText(cv.cols - clock.length - 1, row0, clock, DIM, BAR_BG);
 
     const keys = "tab/←→ select · q quit";
-    const err = this.tracker.lastError;
+    const err = this.tracker.lastError ?? this.music.lastError;
     if (err) {
-      cv.putText(1, row1, fit(`detection error: ${err}`, cv.cols - keys.length - 3), RED, BAR_BG);
+      cv.putText(1, row1, fit(err, cv.cols - keys.length - 3), RED, BAR_BG);
     } else if (sessions.length === 0) {
       cv.putText(1, row1, fit("Start `claude` or `codex` anywhere and a mascot walks in.", cv.cols - keys.length - 3), DIM, BAR_BG);
     } else {

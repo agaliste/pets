@@ -9,6 +9,29 @@ export interface TextCell {
   ch: string;
   fg: RGB;
   bg?: RGB;
+  width?: number; // 0 marks the continuation of a wide grapheme
+}
+
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/** External text must never emit terminal control sequences. */
+export function cleanText(s: string): string {
+  return s.replace(/[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+export function textParts(s: string): string[] {
+  return Array.from(graphemes.segment(cleanText(s)), (part) => part.segment);
+}
+
+export function clipText(s: string, width: number): string {
+  let out = "", used = 0;
+  for (const part of textParts(s)) {
+    const w = Bun.stringWidth(part);
+    if (used + w > width) break;
+    out += part;
+    used += w;
+  }
+  return out;
 }
 
 export type Palette = Record<string, RGB>;
@@ -131,11 +154,23 @@ export class Canvas {
   /** Place text on a terminal row (not a pixel row). */
   putText(col: number, row: number, s: string, fg: RGB, bg?: RGB): void {
     if (row < 0 || row >= this.rows) return;
-    for (let i = 0; i < s.length; i++) {
-      const c = col + i;
-      if (c < 0 || c >= this.cols) continue;
-      const cell: TextCell = bg === undefined ? { ch: s[i]!, fg } : { ch: s[i]!, fg, bg };
-      this.text[row * this.cols + c] = cell;
+    let c = Math.round(col);
+    // Preserve intentional padding; strip only control characters here.
+    for (const { segment: ch } of graphemes.segment(s.replace(/[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g, " "))) {
+      const width = Bun.stringWidth(ch);
+      if (!width) continue;
+      if (c >= 0 && c + width <= this.cols) {
+        const base = row * this.cols;
+        for (let x = c; x < c + width; x++) {
+          const old = this.text[base + x];
+          if (old?.width === 0 && x > 0) this.text[base + x - 1] = { ch: " ", fg, bg };
+          if ((old?.width ?? 1) > 1) this.text[base + x + 1] = { ch: " ", fg, bg };
+        }
+        for (let x = c; x < c + width; x++) {
+          this.text[base + x] = { ch: x === c ? ch : "", fg, bg, width: x === c ? width : 0 };
+        }
+      }
+      c += width;
     }
   }
 
@@ -150,6 +185,7 @@ export class Canvas {
       const tBase = r * this.cols;
       for (let c = 0; c < this.cols; c++) {
         const t = this.text[tBase + c];
+        if (t?.width === 0) continue;
         const top = this.px[topBase + c]!;
         const bot = this.px[botBase + c]!;
         let ch: string, fg: number, bg: number;
