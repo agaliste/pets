@@ -1,7 +1,7 @@
 ---
 version: alpha
 name: Agent Office
-description: A terminal pixel office for local coding-agent mascots and a Spotify singer.
+description: A terminal pixel office and optional floating desktop mode for local coding-agent mascots and a Spotify singer.
 colors:
   background: "#14161c"
   text: "#f3e4cf"
@@ -92,3 +92,118 @@ No reduced-motion setting currently exists; this feature does not claim one.
 Verification is static and through mocked unit/component tests. The user prohibits
 launching apps for testing; live terminal appearance and macOS Automation remain
 manual checks.
+
+## Desktop mode
+
+The approved additional desktop mode removes the room boundary: the same pixel
+characters float over the user's desktop, pass a football across monitors, and
+accompany Spotify with a roaming singer. The terminal office remains a separate,
+unchanged mode. Keep the desktop transparent, with no dashboard or permanent
+status bar covering the user's work.
+
+Football kicks have randomized, original anime-style special-shot effects:
+METEOR DRIVE! (flames), THUNDER STRIKE! (electric arcs), and CYCLONE SHOT!
+(spiraling wind), with a launch shockwave and outlined bitmap name. Avoid
+immediately repeating a style. `FootballEffects` in `src/football-effects.ts`
+owns the bounded 0.95-second effect and at most 12 recent ball samples, using a
+separate random stream so decoration cannot change movement or pass physics.
+Render the ball over its aura/trail, follow actual bounces, and clear trail samples
+on screen-gap jumps. No sound, camera shake, or screen-wide flash. Pause, Hide,
+Reduce Motion, display changes, and the kicker leaving idle clear the effect.
+
+New CLI sessions materialize through a one-second blue-and-cyan pixel wormhole.
+An opening vortex and orbiting sparks sit behind the mascot as it scales into
+view with its hat and accessory, then the portal closes. `DesktopScene` owns
+arrival timing and atlas assets using `MUSIC_COLORS` and `CODEX_PALETTE`.
+Arriving agents are already listed in the menu but begin movement/football only
+after the entrance completes. Pause, Hide, Reduce Motion, and display changes
+reveal agents immediately without replaying their entrance. An agent exiting
+during arrival loses its portal and uses the existing departure explosion.
+
+A departed CLI session leaves a brief pixel explosion at the mascot's last
+position: an expanding warm burst, fragments in its provider's body color, and
+small smoke puffs that shrink away within 0.85 seconds. `DesktopScene` owns the
+effect lifecycle and atlas using the existing mascot/music palettes. Crossing a
+display edge or changing status never triggers it. Pause, Hide, Reduce Motion,
+and display reconfiguration clear effects without replaying them later.
+
+An existing agent transitioning from idle to busy receives a short pixel lightning
+strike from its current monitor's top edge to its head, a raised-arm reaction,
+and outward electric sparks. Tile connected zigzag segments with square pixels
+instead of stretching one sprite; use that display's origin, not the global
+desktop top, including when the agent moves between vertically arranged monitors.
+Use up to 2.5× sprite scale for the thick bolt and larger, wider-spreading impact
+sparks; the segment count fits the available height without extending past the head.
+The paired WORK! bitmap callout pops beside the agent, bounces, and shrinks
+away over 1.15 seconds. It switches sides and clamps to the monitor bounds.
+`src/pixel-font.ts` owns the shared 5x7 alphabet for combat and work callouts;
+the callout uses the existing cream text with a dark pixel outline.
+`DesktopScene` snapshots the previous status independently of tracker objects and
+owns the 0.55-second lifecycle. Only idle-to-busy triggers it; initial discovery,
+unknown-to-busy, and repeated busy polls do not. Existing music accent/text colors
+own the bolt palette. Keep it local to the mascot with no screen-wide flash or
+sound. Pause, Hide, Reduce Motion, departure, and display changes clear the effect.
+
+`src/sprites.ts` remains the canonical sprite/palette owner; `desktopAtlas` in
+`src/desktop-scene.ts` exports those assets to the native renderer at four macOS
+points per pixel. `MUSIC_COLORS` in `src/singer.ts` owns bubble and music colors
+for both modes. `src/desktop.ts` sends these values to `Overlay.swift`; Swift
+does not maintain an independent palette. Desktop lyric text uses the system
+monospaced font at 13 points; its song header uses the system font at 11 points.
+The native menu keeps macOS typography, accessibility, and keyboard navigation.
+
+`DesktopScene` owns free-flight animation and agent identity without changing
+real session status. Idle agents play; busy agents carry a small laptop; unknown
+status never implies idle. `MusicTracker` owns real lyric timing in both modes.
+The desktop shares `wrapBubble` for grapheme-safe two-line lyric pagination, with
+native bubbles constrained to the singer's current screen. Screen gaps are
+skipped, display removal relocates actors, and mirrored displays are deduplicated.
+
+`PetView` is the single native sprite/bubble renderer. Its panels are decorative,
+nonactivating, and click-through; a native menu-bar menu owns pause, hide/show,
+quit, session summaries, and error/empty states. There are no global hotkeys.
+Pause and macOS Reduce Motion stop decorative motion while
+song/session information stays current. See [DESKTOP.md](DESKTOP.md) for startup,
+runtime boundaries, and the manual verification matrix.
+
+### Typing combat
+
+The approved typing interaction uses passive keyboard timing and Accessibility
+caret geometry, with mouse-pointer fallback. Its privacy boundary is explicit:
+no key text/codes, field values, document content, clipboard, persistent input
+history, or network transmission. The menu owns enable/disable and permission
+status. Secure Input is respected; reported secure text fields suppress effects.
+The native hook never changes or swallows input, and caret queries run off the
+main thread with bounded timeouts.
+
+The signature is a miniature arcade fight immediately above the insertion point:
+an orange fighter chains jabs, kicks, uppercuts, spinning strikes, and energy
+blasts against a robot opponent. This is decorative and independent of real
+coding-session state. A short hit counter and dotted combo timer sit below the
+fighters; transient bitmap callouts climb from COMBO! to ON FIRE!, RAMPAGE!,
+OOOOMMMGGGG!, and GODLIKE! The whole scene disappears after a typing pause, moves
+below the anchor at the upper display edge, and never steals focus.
+
+`src/combat.ts` owns original combat sprite poses, combo
+thresholds, placement, and reduced-motion rendering. Its palette adapts existing
+`C`, `MASCOT_PALETTE`, `CODEX_PALETTE`, and `MUSIC_COLORS`; it is exported through
+the same atlas and drawn by `PetView.drawSprites` above pets and lyric bubbles.
+`TypingInput.swift` owns capture/geometry; `TypingCombat` receives only time and
+position. Reduced Motion keeps static figures and counters without strike motion,
+sparks, or label bounce. Pause, Hide, menu interaction, app switching, and display
+changes clear effects. No sounds or screen-wide flashes are added.
+
+### Quota alerts
+
+`src/quota.ts` owns the local CodexBar snapshot adapter, percentage comparisons,
+and transient desktop quota renderer. Reuse `pixelLabel` and the existing sprite
+renderer; do not add a second text/drawing system. Stack up to four compact alerts
+below the monitor's top edge, selecting the pointer's display on notification.
+Each carries provider, session/weekly window, percentage remaining, explicit
+UP/DOWN and signed percentage-point change, plus a discrete energy bar. Cream
+is the initial reading, teal an increase, and amber consumption. Meaning never
+relies on color alone. Use a short pixel bounce and directional sparks; Reduce
+Motion removes both. Pause/Hide suppress alerts, and unknown/missing/stale quotas
+never become zero. The native menu retains the latest status after alerts expire.
+The snapshot is the only usage integration; no credentials or quota history are
+written, and no direct provider API is contacted.
