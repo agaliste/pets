@@ -46,6 +46,14 @@ by terminal width; the shared renderer clips without splitting a grapheme.
 
 `computeLayout` remains the owner of room geometry. Keep two status rows clear.
 The singer walks from the door toward the right side of the room; lyric bubbles
+sit above a disco corner with a mirror ball, speakers and softly pulsing tiles.
+The disco lights dim when playback stops. A smaller football pitch sits below
+the disco with an aisle wide enough to keep football players off the stage.
+The disco expands to 48 columns by 16 half-block pixels when space allows,
+keeping a shorter dance floor on small terminals so the pitch still fits.
+`COL.discoBase`, `COL.discoCyan`, `COL.discoPink` and `COL.discoGold` in
+`src/office.ts` own the stage palette; `drawDisco` is its only renderer.
+Lyric bubbles
 are bounded to the viewport. The singer hides below 24 columns or 16 terminal rows.
 Keep the lyric area to two content lines; longer text pages rather than covering
 the whole room. The bubble header identifies the artist and song; there is no

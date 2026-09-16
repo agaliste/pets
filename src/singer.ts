@@ -80,8 +80,8 @@ export class Singer {
     // Paginate long lines; timing of short lines stays entirely driven by LRC.
     const page = Math.floor((now - this.lyricSince) / 4000) % Math.ceil(allLines.length / 2);
     const lines = allLines.slice(page * 2, page * 2 + 2);
-    const targetX = cv.cols - MASCOT_W - 6;
-    const targetY = Math.min(L.h - MASCOT_H - 2, Math.max(L.wallH + 4, (lines.length + 5) * 2));
+    const targetX = L.disco ? L.disco.x + L.disco.w - MASCOT_W - 8 : cv.cols - MASCOT_W - 6;
+    const targetY = L.disco ? L.disco.y + 3 : Math.min(L.h - MASCOT_H - 2, Math.max(L.wallH + 4, (lines.length + 5) * 2));
     const dx = targetX - this.x, dy = targetY - this.y, distance = Math.hypot(dx, dy);
     const step = Math.min(distance, Math.max(0, dt) * 22);
     if (distance) { this.x += dx / distance * step; this.y += dy / distance * step; }

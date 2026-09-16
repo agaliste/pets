@@ -128,15 +128,16 @@ class App {
     if (this.selectedPid !== null && !this.sim.agents.has(this.selectedPid)) this.selectedPid = null;
 
     const cv = this.canvas, L = this.layout;
+    const music = this.music.view();
     cv.clear(BAR_BG);
-    drawBackground(cv, L, new Date(now));
+    drawBackground(cv, L, new Date(now), music !== null);
     const drawables: Drawable[] = [
       ...roomDrawables(L, this.sim.deskStates(), this.tick, this.sim.deskLabels()),
       ...this.sim.drawables(now, this.selectedPid),
     ];
     drawables.sort((a, b) => a.depth - b.depth);
     for (const d of drawables) d.draw(cv);
-    this.singer.draw(cv, L, this.music.view(), this.sim.agents.values(), nowPerf, dt);
+    this.singer.draw(cv, L, music, this.sim.agents.values(), nowPerf, dt);
     this.drawStatus(cv, sessions, now);
 
     this.term.write(this.writer.frame(cv.renderRows()));

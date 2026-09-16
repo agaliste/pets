@@ -29,6 +29,7 @@ export interface Layout {
   coffee: { pos: Pt; stand: Pt } | null;
   plant: Pt | null;
   couch: { pos: Pt; seat: Pt } | null;
+  disco: Rect | null;
   pitch: Rect | null;
   goalL: Rect | null;
   goalR: Rect | null;
@@ -51,12 +52,21 @@ export function computeLayout(w: number, h: number): Layout {
   const door: Rect = { x: 2, y: 1, w: 8, h: wallH - 1 };
   const spawn: Pt = { x: door.x, y: wallH - MASCOT_H + 2 };
 
-  let pitchW = 0;
-  if (w >= 84) pitchW = Math.min(52, Math.max(28, Math.round(w * 0.34)));
-  else if (w >= 56) pitchW = 24;
-  const pitch: Rect | null = pitchW > 0 && h - wallH - 5 >= 14
-    ? { x: w - pitchW - 1, y: wallH + 3, w: pitchW, h: h - wallH - 5 }
+  // Reserve a music corner above a compact pitch. Football players can extend
+  // five pixels above the touchline, so leave a six-pixel aisle between them.
+  const cornerW = w >= 56 ? Math.min(48, Math.max(36, Math.round(w * 0.34))) : 0;
+  // Grow the dance floor when space allows, retaining both areas on short screens.
+  const discoH = Math.max(12, Math.min(16, h - 32));
+  const disco: Rect | null = cornerW && h >= 28
+    ? { x: w - cornerW - 1, y: wallH, w: cornerW, h: discoH }
     : null;
+  const pitchTop = disco ? disco.y + disco.h + 6 : wallH + 3;
+  const pitchH = Math.min(24, h - pitchTop - 2);
+  const pitchW = Math.min(32, Math.max(24, Math.round(w * 0.3) - 8));
+  const pitch: Rect | null = cornerW > 0 && pitchH >= 12
+    ? { x: w - pitchW - 1, y: h - pitchH - 2, w: pitchW, h: pitchH }
+    : null;
+  const corner = disco ?? pitch;
 
   let goalL: Rect | null = null, goalR: Rect | null = null;
   if (pitch) {
@@ -66,7 +76,7 @@ export function computeLayout(w: number, h: number): Layout {
   }
 
   const areaX = 12;
-  const areaRight = pitch ? pitch.x - 4 : w - 2;
+  const areaRight = corner ? corner.x - 4 : w - 2;
   const areaW = Math.max(0, areaRight - areaX);
 
   // Coffee corner against the wall at the right end of the desk area.
@@ -124,11 +134,11 @@ export function computeLayout(w: number, h: number): Layout {
   const floor: Rect = {
     x: 1,
     y: wallH + 1,
-    w: (pitch ? pitch.x - 2 : w - 2),
+    w: (corner ? corner.x - 2 : w - 2),
     h: h - wallH - 2,
   };
 
-  return { w, h, wallH, door, spawn, window, clock, whiteboard, desks, coffee, plant, couch, pitch, goalL, goalR, floor };
+  return { w, h, wallH, door, spawn, window, clock, whiteboard, desks, coffee, plant, couch, disco, pitch, goalL, goalR, floor };
 }
 
 const COL = {
@@ -152,7 +162,41 @@ const COL = {
   grassB: 0x2a7033,
   line: 0xe8f0e8,
   net: 0x9fb39f,
+  discoBase: 0x202331,
+  discoCyan: 0x54c9d4,
+  discoPink: 0xcb6ab7,
+  discoGold: 0xd5b96d,
 };
+
+function drawDisco(cv: Canvas, d: Rect, now: number, playing: boolean): void {
+  cv.fillRect(d.x, d.y, d.w, d.h, COL.discoBase);
+  cv.strokeRect(d.x, d.y, d.w, d.h, playing ? COL.discoCyan : COL.monitorEdge);
+  const colors = [COL.discoCyan, COL.discoPink, COL.discoGold];
+  // Softly pulsing floor tiles; the room stays quiet when playback stops.
+  for (let row = 0; row < Math.floor((d.h - 5) / 2); row++) {
+    for (let col = 0; col < Math.floor((d.w - 2) / 4); col++) {
+      const light = playing ? 0.35 + 0.2 * Math.sin(now / 900 + col + row * 2) : 0.08;
+      cv.fillRect(d.x + 1 + col * 4, d.y + 5 + row * 2, 3, 1,
+        mix(COL.discoBase, colors[(col + row) % colors.length]!, light));
+    }
+  }
+  // A hanging mirror ball, offset left so the performer and microphone stay clear.
+  const bx = d.x + 7, by = d.y + 2;
+  cv.fillRect(bx + 2, d.y, 1, 2, COL.monitorEdge);
+  for (let row = 0; row < 5; row++) {
+    for (let col = 0; col < 5; col++) {
+      if ((row === 0 || row === 4) && (col === 0 || col === 4)) continue;
+      const bright = (col + row + Math.floor(now / 900)) % 3 === 0;
+      cv.set(bx + col, by + row, playing && bright ? COL.line : COL.monitorEdge);
+    }
+  }
+  for (const sx of [d.x + 1, d.x + d.w - 4]) {
+    const sy = d.y + d.h - 8;
+    cv.fillRect(sx, sy, 3, 7, COL.wallTrim);
+    cv.set(sx + 1, sy + 1, playing ? COL.discoPink : COL.monitorEdge);
+    cv.fillRect(sx + 1, sy + 4, 1, 2, COL.monitorEdge);
+  }
+}
 
 function skyColor(now: Date): { sky: RGB; moon: boolean } {
   const hr = now.getHours() + now.getMinutes() / 60;
@@ -163,7 +207,7 @@ function skyColor(now: Date): { sky: RGB; moon: boolean } {
 }
 
 /** Wall, floor, door, window, pitch: everything nothing can walk behind. */
-export function drawBackground(cv: Canvas, L: Layout, now: Date): void {
+export function drawBackground(cv: Canvas, L: Layout, now: Date, musicPlaying = false): void {
   cv.fillRect(0, 0, L.w, L.wallH, COL.wall);
   cv.fillRect(0, L.wallH - 1, L.w, 1, COL.wallTrim);
   for (let y = L.wallH; y < L.h; y += 4) {
@@ -200,6 +244,7 @@ export function drawBackground(cv: Canvas, L: Layout, now: Date): void {
   }
   if (L.clock) cv.blit(CLOCK, L.clock.x, L.clock.y);
   if (L.whiteboard) cv.blit(WHITEBOARD, L.whiteboard.x, L.whiteboard.y);
+  if (L.disco) drawDisco(cv, L.disco, now.getTime(), musicPlaying);
 
   // Football pitch
   if (L.pitch) {

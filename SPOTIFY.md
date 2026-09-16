@@ -2,6 +2,10 @@
 
 While the office is open, playing a song in the Spotify macOS app brings in a
 Claude or Codex singer with a microphone. Its appearance is stable for each song.
+At normal terminal widths, the singer performs in a top-right disco with a mirror
+ball, speakers and softly pulsing floor lights. A compact football field sits
+below it. The lights dim when playback stops. Narrow terminals omit the disco;
+short terminals hide the pitch when there is not enough room for both.
 Other mascots occasionally display short ad-libs without invoking any AI model.
 The singer is decorative: it does not count as a CLI session or occupy a desk.
 
