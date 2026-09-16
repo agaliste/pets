@@ -1,4 +1,4 @@
-# Agent Office
+# pets
 
 A terminal office with one mascot per running Claude Code or Codex CLI session.
 Claude has an orange mascot; Codex has a white robot. Both wear hats, work at
@@ -43,5 +43,4 @@ bun run build
 ```
 
 Tests use temporary fixtures and mocked process/file listings. They do not launch
-the office or either coding CLI. The build still produces `dist/claude-office`
-to preserve the existing executable path.
+the office or either coding CLI. The build produces `dist/pets`.

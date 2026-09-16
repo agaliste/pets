@@ -140,8 +140,8 @@ final class Overlay: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         let status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         status.button?.title = "⚽"
-        status.button?.setAccessibilityLabel("Agent Office")
-        status.button?.toolTip = "Agent Office · floating desktop pets"
+        status.button?.setAccessibilityLabel("pets")
+        status.button?.toolTip = "pets · floating desktop pets"
         let menu = NSMenu()
         menu.delegate = self
         status.menu = menu
@@ -205,7 +205,7 @@ final class Overlay: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 emit(["type": "quotaScreen", "request": request, "screen": view?.screenID ?? ""])
             }
             frame = message
-            statusItem?.button?.toolTip = "Agent Office · \(message.status ?? "")"
+            statusItem?.button?.toolTip = "pets · \(message.status ?? "")"
             if !hidden { for panel in panels { panel.contentView?.needsDisplay = true } }
         }
     }
@@ -253,7 +253,7 @@ final class Overlay: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         typing.suspended = true
         menu.removeAllItems()
-        let title = NSMenuItem(title: "Agent Office", action: nil, keyEquivalent: "")
+        let title = NSMenuItem(title: "pets", action: nil, keyEquivalent: "")
         menu.addItem(title)
         menu.addItem(withTitle: frame?.status ?? "Connecting…", action: nil, keyEquivalent: "")
         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
@@ -271,7 +271,7 @@ final class Overlay: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let hide = menu.addItem(withTitle: hidden ? "Show pets" : "Hide pets", action: #selector(toggleHidden), keyEquivalent: "")
         hide.target = self
         menu.addItem(.separator())
-        let quit = menu.addItem(withTitle: "Quit Agent Office", action: #selector(quit), keyEquivalent: "q")
+        let quit = menu.addItem(withTitle: "Quit pets", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
     }
 

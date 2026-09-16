@@ -12,7 +12,7 @@ afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root,
 const event = (type: string, timestamp = new Date().toISOString()) => JSON.stringify({ type: "event_msg", timestamp, payload: { type } }) + "\n";
 
 async function fixture() {
-  const root = await mkdtemp(join(tmpdir(), "pet-sessions-"));
+  const root = await mkdtemp(join(tmpdir(), "pets-sessions-"));
   roots.push(root);
   const dir = join(root, "custom codex home", "sessions", "2026", "09", "15");
   await mkdir(dir, { recursive: true });

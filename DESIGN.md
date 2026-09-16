@@ -1,6 +1,6 @@
 ---
 version: alpha
-name: Agent Office
+name: pets
 description: A terminal pixel office and optional floating desktop mode for local coding-agent mascots and a Spotify singer.
 colors:
   background: "#14161c"
@@ -19,7 +19,7 @@ omitted:
     reason: Runtime ownership is documented in the Components section.
 ---
 
-# Agent Office design
+# pets design
 
 ## Overview
 

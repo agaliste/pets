@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "claude-office",
+      "name": "pets",
       "devDependencies": {
         "@types/bun": "latest",
         "typescript": "^7",

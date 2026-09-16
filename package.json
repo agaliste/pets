@@ -1,5 +1,5 @@
 {
-  "name": "claude-office",
+  "name": "pets",
   "version": "0.1.0",
   "description": "A terminal office with mascots for every running Claude Code and Codex CLI session",
   "type": "module",
@@ -10,7 +10,7 @@
     "build:desktop": "bun run scripts/build-desktop.ts",
     "check": "tsc --noEmit",
     "test": "bun test",
-    "build": "bun build --compile --minify src/main.ts --outfile dist/claude-office"
+    "build": "bun build --compile --minify src/main.ts --outfile dist/pets"
   },
   "devDependencies": {
     "@types/bun": "latest",

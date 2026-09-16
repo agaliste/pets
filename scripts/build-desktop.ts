@@ -7,10 +7,10 @@ await mkdir(join(root, "dist"), { recursive: true });
 const result = Bun.spawnSync([
   "xcrun", "swiftc", "-O", "-swift-version", "5", "-framework", "AppKit",
   join(root, "desktop/main.swift"), join(root, "desktop/Overlay.swift"), join(root, "desktop/TypingInput.swift"),
-  "-o", join(root, "dist/agent-desktop-overlay"),
+  "-o", join(root, "dist/pets-desktop-overlay"),
 ], { stdout: "inherit", stderr: "inherit" });
 if (result.exitCode !== 0) {
   console.error("Desktop build failed. Install Apple's Command Line Tools with xcode-select --install if needed.");
   process.exit(result.exitCode || 1);
 }
-console.log("Built dist/agent-desktop-overlay. Start with bun run desktop.");
+console.log("Built dist/pets-desktop-overlay. Start with bun run desktop.");

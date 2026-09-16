@@ -162,7 +162,7 @@ bun run build:desktop
 ```
 
 These commands use fixtures/type checks/compilation and do not launch the app.
-The native build is `dist/agent-desktop-overlay`; it is a renderer subprocess,
+The native build is `dist/pets-desktop-overlay`; it is a renderer subprocess,
 so launch it through `bun run desktop`, not directly. To start again without
 rebuilding, use `bun run src/desktop.ts` after a successful desktop build.
 

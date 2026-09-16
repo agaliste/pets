@@ -9,7 +9,7 @@ import { combatAtlas, TypingCombat } from "./combat.ts";
 /** Private, local pipe protocol. Neither process opens a port or persists session data. */
 export async function startDesktop(): Promise<void> {
   if (process.platform !== "darwin") throw new Error("Desktop mode requires macOS.");
-  const nativePath = join(import.meta.dir, "../dist/agent-desktop-overlay");
+  const nativePath = join(import.meta.dir, "../dist/pets-desktop-overlay");
   if (!await Bun.file(nativePath).exists()) throw new Error("Build the desktop overlay first: bun run build:desktop");
   const scene = new DesktopScene();
   const sessions = new SessionTracker();
@@ -113,7 +113,7 @@ export async function startDesktop(): Promise<void> {
       } finally { writing = false; }
     };
     timer = setInterval(() => { void tick(); }, 1000 / 30);
-    console.log("Agent Office desktop mode · use the menu-bar football to pause, hide, or quit. Ctrl+C also quits.");
+    console.log("pets desktop mode · use the menu-bar football to pause, hide, or quit. Ctrl+C also quits.");
     const code = await native.exited;
     finish();
     await eventResult;

@@ -1,4 +1,4 @@
-// Agent Office: a terminal office where every running Claude Code or Codex CLI session
+// pets: a terminal office where every running Claude Code or Codex CLI session
 // on this machine shows up as a mascot wearing its own hat.
 
 import { Canvas, FrameWriter } from "./canvas.ts";
@@ -155,7 +155,7 @@ class App {
     const idle = sessions.filter((s) => s.status === "idle").length;
     const unknown = sessions.length - busy - idle;
     let col = 1;
-    cv.putText(col, row0, "Agent Office", ORANGE, BAR_BG); col += 13;
+    cv.putText(col, row0, "pets", ORANGE, BAR_BG); col += 5;
     cv.putText(col, row0, "│", DIM, BAR_BG); col += 2;
     cv.putText(col, row0, `● ${busy} working`, GREEN, BAR_BG); col += `● ${busy} working`.length + 2;
     cv.putText(col, row0, `○ ${idle} idle`, DIM, BAR_BG); col += `○ ${idle} idle`.length + 2;
@@ -203,7 +203,7 @@ class App {
 }
 
 if (!process.stdout.isTTY) {
-  console.error("claude-office needs an interactive terminal.");
+  console.error("pets needs an interactive terminal.");
   process.exit(1);
 }
 await new App().start();
