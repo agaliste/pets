@@ -1,11 +1,11 @@
 import type { Sprite } from "./canvas.ts";
 import { cleanText, clipText } from "./canvas.ts";
 import type { MusicView } from "./music.ts";
-import type { AgentSession } from "./sessions.ts";
+import { PROVIDER_NAMES, type AgentSession } from "./sessions.ts";
 import { MUSIC_COLORS, wrapBubble } from "./singer.ts";
 import { pixelLabel } from "./pixel-font.ts";
 import { FootballEffects, footballAtlas } from "./football-effects.ts";
-import { ACCESSORIES, BALL, C, CODEX_MASCOT, CODEX_PALETTE, HATS, MASCOT, MASCOT_PALETTE, type MascotFrame } from "./sprites.ts";
+import { ACCESSORIES, BALL, C, PROVIDER_MASCOTS, CODEX_PALETTE, HATS, MASCOT, type MascotFrame } from "./sprites.ts";
 
 export interface Point { x: number; y: number }
 export interface Screen extends Point { id: string; w: number; h: number }
@@ -91,8 +91,9 @@ export function travel(p: Point, velocity: Point, dt: number, screens: Screen[])
 export function desktopAtlas(): Record<string, Sprite> {
   const atlas: Record<string, Sprite> = { ball: BALL, ...footballAtlas() };
   for (const frame of Object.keys(MASCOT) as MascotFrame[]) {
-    atlas[`claude:${frame}`] = { rows: MASCOT[frame], palette: MASCOT_PALETTE };
-    atlas[`codex:${frame}`] = { rows: CODEX_MASCOT[frame], palette: CODEX_PALETTE };
+    for (const [provider, mascot] of Object.entries(PROVIDER_MASCOTS)) {
+      atlas[`${provider}:${frame}`] = { rows: mascot.frames[frame], palette: mascot.palette };
+    }
   }
   HATS.forEach((hat, i) => { atlas[`hat:${i}`] = hat; });
   ACCESSORIES.forEach((accessory, i) => { atlas[`accessory:${i}`] = accessory; });
@@ -121,8 +122,9 @@ export function desktopAtlas(): Record<string, Sprite> {
     rows: ["....#####....", "..#########..", ".##*******##.", "###*******###", ".###########.", "...#######...", ".....###.....", ".....###.....", "....#####....", "...#######..."],
     palette: { "#": 0xba6440, "*": 0xffd180 },
   };
-  atlas["explosion:claude"] = { rows: ["##", "#."], palette: { "#": C.body } };
-  atlas["explosion:codex"] = { rows: ["##", "#."], palette: { "#": CODEX_PALETTE["#"]! } };
+  for (const [provider, mascot] of Object.entries(PROVIDER_MASCOTS)) {
+    atlas[`explosion:${provider}`] = { rows: ["##", "#."], palette: { "#": mascot.palette["#"]! } };
+  }
   const vortex = [
     "....#####....", "..##*****##..", ".#**ooooo**#.", ".#*oo###oo*#.",
     "#*oo#***#oo*#", "#*o#*ooo*#o*#", "#*o#*o+o*#o*#", "#*o#*oo**#o*#",
@@ -365,7 +367,7 @@ export class DesktopScene {
           y: Math.round(clamp(pet.y - 42 - bounce * 9 - lightningAge * 6, screen.y + 8, screen.y + screen.h - height - 8)),
         });
       }
-      frame.sessions.push(`${pet.session.provider === "codex" ? "Codex" : "Claude"} · ${clipText(cleanText(pet.session.name), 50)} · ${pet.session.status} · ${HATS[pet.hat]!.name} · ${pet.session.pid}`);
+      frame.sessions.push(`${PROVIDER_NAMES[pet.session.provider]} · ${clipText(cleanText(pet.session.name), 50)} · ${pet.session.status} · ${HATS[pet.hat]!.name} · ${pet.session.pid}`);
     }
     frame.sprites.push(...this.shots.render(this.ball, now, this.screens, new Set(players.map(p => p.session.pid)), paused));
     // Keep the ball readable in front of its special-shot trail and aura.
@@ -433,7 +435,7 @@ export class DesktopScene {
         });
       }
     }
-    frame.status = sessions.length ? `${sessions.length} agents · ${players.length} playing` : "Start Claude or Codex to bring in an agent";
+    frame.status = sessions.length ? `${sessions.length} agents · ${players.length} playing` : "Start Claude, Codex, or OpenCode to bring in an agent";
     return frame;
   }
 }

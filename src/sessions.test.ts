@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { codexIndexPath, isCodexCommand, parseCodexActivity, parseCodexFiles, parseCodexMetadata, parseCodexTitles, readChunk } from "./codex.ts";
 import { isClaudeCommand, SessionTracker } from "./sessions.ts";
-import { CODEX_MASCOT, CODEX_PALETTE, MASCOT, MASCOT_H, MASCOT_W } from "./sprites.ts";
+import { CODEX_MASCOT, CODEX_PALETTE, OPENCODE_MASCOT, OPENCODE_PALETTE, MASCOT, MASCOT_H, MASCOT_W } from "./sprites.ts";
 
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
@@ -142,6 +142,18 @@ test("every Codex animation fits existing hats, desks, and collision dimensions"
     for (const row of frame) {
       expect(row).toHaveLength(MASCOT_W);
       for (const pixel of row) if (pixel !== ".") expect(CODEX_PALETTE[pixel]).toBeDefined();
+    }
+  }
+});
+
+
+test("OpenCode animation frames fit existing hats and have complete palettes", () => {
+  expect(Object.keys(OPENCODE_MASCOT)).toEqual(Object.keys(MASCOT));
+  for (const rows of Object.values(OPENCODE_MASCOT)) {
+    expect(rows).toHaveLength(MASCOT_H);
+    for (const row of rows) {
+      expect(row).toHaveLength(MASCOT_W);
+      for (const pixel of row) if (pixel !== ".") expect(OPENCODE_PALETTE[pixel]).toBeDefined();
     }
   }
 });

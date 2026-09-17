@@ -1,9 +1,9 @@
-// pets: a terminal office where every running Claude Code or Codex CLI session
+// pets: a terminal office where every running Claude Code, Codex CLI, or OpenCode session
 // on this machine shows up as a mascot wearing its own hat.
 
 import { Canvas, FrameWriter } from "./canvas.ts";
 import { computeLayout, drawBackground, roomDrawables, type Drawable, type Layout } from "./office.ts";
-import { SessionTracker, type AgentSession } from "./sessions.ts";
+import { PROVIDER_NAMES, SessionTracker, type AgentSession } from "./sessions.ts";
 import { Sim } from "./sim.ts";
 import { Terminal, termSize } from "./term.ts";
 import { homedir } from "node:os";
@@ -175,13 +175,13 @@ class App {
     if (err) {
       cv.putText(1, row1, fit(err, cv.cols - keys.length - 3), RED, BAR_BG);
     } else if (sessions.length === 0) {
-      cv.putText(1, row1, fit("Start `claude` or `codex` anywhere and a mascot walks in.", cv.cols - keys.length - 3), DIM, BAR_BG);
+      cv.putText(1, row1, fit("Start `claude`, `codex`, or `opencode` to bring in a mascot.", cv.cols - keys.length - 3), DIM, BAR_BG);
     } else {
       const a = this.selectedPid !== null ? this.sim.agents.get(this.selectedPid) : undefined;
       if (a) {
         const s = a.session;
         const parts = [
-          s.provider === "codex" ? "Codex" : "Claude",
+          PROVIDER_NAMES[s.provider],
           s.name,
           s.title ?? "",
           shortPath(s.cwd),
@@ -194,7 +194,7 @@ class App {
         cv.putText(1, row1, "▼ ", ORANGE, BAR_BG);
         cv.putText(3, row1, fit(parts.join("  ·  "), cv.cols - keys.length - 5), BAR_FG, BAR_BG);
       } else {
-        const names = sessions.map((s) => `${s.status === "busy" ? "●" : s.status === "idle" ? "○" : "?"} ${s.provider === "codex" ? "Codex" : "Claude"}: ${s.name}`).join("  ");
+        const names = sessions.map((s) => `${s.status === "busy" ? "●" : s.status === "idle" ? "○" : "?"} ${PROVIDER_NAMES[s.provider]}: ${s.name}`).join("  ");
         cv.putText(1, row1, fit(names, cv.cols - keys.length - 3), BAR_FG, BAR_BG);
       }
     }

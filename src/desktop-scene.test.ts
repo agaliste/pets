@@ -55,7 +55,7 @@ describe("floating desktop scene", () => {
   test("empty desktop does not invent agents or football players", () => {
     const frame = scene().update([], null, 0.03);
     expect(frame.sprites).toEqual([]);
-    expect(frame.status).toContain("Start Claude or Codex");
+    expect(frame.status).toContain("Start Claude, Codex, or OpenCode");
   });
   test("one mascot per live session; accessories remain stable and sessions leave", () => {
     const sim = scene();
@@ -408,4 +408,24 @@ describe("floating desktop scene", () => {
     sim.setScreens(screens);
     expect(sim.update([session(1)], song, 0.03).sessions).toHaveLength(1);
   });
+});
+
+
+test("OpenCode renders its own mascot, accessories, label, and departure fragments", () => {
+  const sim = scene();
+  const pet: AgentSession = { ...session(7), provider: "opencode" };
+  const atlas = desktopAtlas();
+  const frame = settle(sim, [pet]);
+  expect(frame.sessions[0]).toStartWith("OpenCode ·");
+  expect(frame.sprites.some(s => s.sprite.startsWith("opencode:"))).toBe(true);
+  expect(frame.sprites.some(s => s.sprite.startsWith("accessory:"))).toBe(true);
+  for (const sprite of frame.sprites) {
+    expect(atlas[sprite.sprite]).toBeDefined();
+    expect(Number.isFinite(sprite.x) && Number.isFinite(sprite.y)).toBe(true);
+  }
+  sim.update([], null, 1 / 30);
+  let departure = sim.update([], null, 1 / 30);
+  for (let i = 0; i < 22; i++) departure = sim.update([], null, 1 / 30);
+  expect(departure.sprites.some(s => s.sprite === "explosion:opencode")).toBe(true);
+  expect(atlas["explosion:opencode"]).toBeDefined();
 });

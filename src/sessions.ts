@@ -1,4 +1,4 @@
-// Detects running Claude Code and Codex CLI sessions anywhere on this machine.
+// Detects running Claude Code, Codex CLI, and OpenCode sessions on this machine.
 // Codex uses live processes plus their open rollout files (never a cwd guess).
 //
 // Sources, in order of trust:
@@ -13,11 +13,13 @@ import { open, readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { codexIndexPath, isCodexCommand, parseCodexActivity, parseCodexFiles, parseCodexMetadata, parseCodexTitles, readChunk } from "./codex.ts";
+import { parseOpenCodeCommand, parseOpenCodeFiles, readOpenCodeSession, type OpenCodeCommand } from "./opencode.ts";
 
 export type SessionStatus = "busy" | "idle" | "unknown";
+export const PROVIDER_NAMES = { claude: "Claude", codex: "Codex", opencode: "OpenCode" } as const;
 
 export interface AgentSession {
-  provider: "claude" | "codex";
+  provider: keyof typeof PROVIDER_NAMES;
   pid: number;
   sessionId: string | null;
   cwd: string;
@@ -26,7 +28,7 @@ export interface AgentSession {
   startedAt: number; // epoch ms
   version: string | null;
   title: string | null;
-  source: "registry" | "ps" | "rollout";
+  source: "registry" | "ps" | "rollout" | "database";
   lastActivity: number; // epoch ms
 }
 
@@ -110,6 +112,7 @@ export class SessionTracker {
   private sessions = new Map<number, ClaudeSession>();
   private livePids = new Set<number>();
   private codexPids = new Map<number, number>(); // pid -> process start time
+  private openCodePids = new Map<number, OpenCodeCommand & { startedAt: number }>();
   private codexRollouts = new Map<number, { path: string; mtime: number; size: number }>();
   private codexTitles = new Map<string, { at: number; titles: Map<string, string> }>();
   private lastPs = 0;
@@ -137,6 +140,7 @@ export class SessionTracker {
         this.lastRegistry = now;
         await this.readRegistry(now);
         await this.readCodexSessions(now);
+        await this.readOpenCodeSessions();
         await this.refreshTitles(now);
       }
       this.lastError = null;
@@ -152,25 +156,30 @@ export class SessionTracker {
     if (!out.trim()) throw new Error("Unable to read the process list");
     const pids = new Set<number>();
     const codex = new Map<number, { parent: number; startedAt: number; wrapper: boolean }>();
+    const opencode = new Map<number, OpenCodeCommand & { parent: number; startedAt: number }>();
     for (const raw of out.split("\n")) {
       const match = raw.match(/^\s*(\d+)\s+(\d+)\s+([\d:-]+)\s+(.+)$/);
       if (!match) continue;
       const pid = Number(match[1]);
       if (!Number.isFinite(pid) || pid === process.pid) continue;
       const argv = match[4]!.trim().split(/\s+/);
+      const openCodeCommand = parseOpenCodeCommand(argv);
+      const [days, clock] = match[3]!.includes("-") ? match[3]!.split("-") : ["0", match[3]!];
+      const seconds = clock!.split(":").reduce((total, part) => total * 60 + Number(part), 0) + Number(days) * 86400;
+      const startedAt = Date.now() - seconds * 1000;
       if (isClaudeCommand(argv)) pids.add(pid);
       else if (isCodexCommand(argv)) {
-        const [days, clock] = match[3]!.includes("-") ? match[3]!.split("-") : ["0", match[3]!];
-        const seconds = clock!.split(":").reduce((total, part) => total * 60 + Number(part), 0) + Number(days) * 86400;
-        codex.set(pid, { parent: Number(match[2]), startedAt: Date.now() - seconds * 1000, wrapper: basename(argv[0]!) !== "codex" });
-      }
+        codex.set(pid, { parent: Number(match[2]), startedAt, wrapper: basename(argv[0]!) !== "codex" });
+      } else if (openCodeCommand) opencode.set(pid, { ...openCodeCommand, parent: Number(match[2]), startedAt });
     }
     // npm's node wrapper stays alive while its native Codex child runs.
     const wrappers = new Set([...codex.values()].map((p) => p.parent));
     this.codexPids = new Map([...codex].filter(([pid, p]) => !p.wrapper || !wrappers.has(pid)).map(([pid, p]) => [pid, p.startedAt]));
+    const openCodeParents = new Set([...opencode.values()].map(p => p.parent));
+    this.openCodePids = new Map([...opencode].filter(([pid, p]) => !p.wrapper || !openCodeParents.has(pid)));
     this.livePids = pids;
     for (const pid of [...this.sessions.keys()]) {
-      if (!pids.has(pid) && !this.codexPids.has(pid)) {
+      if (!pids.has(pid) && !this.codexPids.has(pid) && !this.openCodePids.has(pid)) {
         this.sessions.delete(pid);
         this.cwdCache.delete(pid);
         this.titles.delete(pid);
@@ -296,6 +305,28 @@ export class SessionTracker {
           this.codexRollouts.delete(pid);
         }
       } else this.codexRollouts.delete(pid);
+      this.sessions.set(pid, session);
+    }
+  }
+
+  private async readOpenCodeSessions(): Promise<void> {
+    if (!this.openCodePids.size) return;
+    const files = parseOpenCodeFiles(await this.runCommand(["lsof", "-a", "-p", [...this.openCodePids.keys()].join(","), "-Fpfn"]));
+    for (const [pid, command] of this.openCodePids) {
+      const opened = files.get(pid);
+      const prev = this.sessions.get(pid);
+      const cwd = opened?.cwd ?? prev?.cwd ?? "?";
+      const startedAt = prev?.startedAt ?? command.startedAt;
+      let session: AgentSession = {
+        provider: "opencode", pid, sessionId: command.sessionId, cwd,
+        name: basename(cwd) || "opencode", status: "unknown", startedAt,
+        version: null, title: null, source: "ps", lastActivity: 0,
+      };
+      // Multiple opened databases are ambiguous. Never substitute the global history file.
+      if (command.sessionId && opened?.databases.length === 1) {
+        const meta = readOpenCodeSession(opened.databases[0]!, command.sessionId, startedAt);
+        if (meta) session = { ...session, ...meta, name: basename(meta.cwd) || "opencode", source: "database" };
+      }
       this.sessions.set(pid, session);
     }
   }

@@ -1,4 +1,4 @@
-// Pixel-art data: Claude and Codex mascots, hats, accessories and office props.
+// Pixel-art data: coding mascots, hats, accessories and office props.
 // In every sprite '.' is transparent; other characters index the palette.
 
 import type { Palette, Sprite } from "./canvas.ts";
@@ -137,6 +137,29 @@ export const CODEX_MASCOT: Record<MascotFrame, string[]> = {
   sit: [...ROBOT_HEAD, ".##########.", "..##====##..", "............", "............"],
 };
 
+// OpenCode is a charcoal terminal with a mint prompt and little feet.
+export const OPENCODE_PALETTE: Palette = {
+  "#": 0x74808a, "=": 0x37424f, "o": 0x17202a, "*": 0xa3e6b4,
+};
+const TERMINAL_HEAD = [".##########.", ".#oooooooo#.", ".#o*oooooo#.", ".#oo*o**oo#."];
+export const OPENCODE_MASCOT: Record<MascotFrame, string[]> = {
+  stand: [...TERMINAL_HEAD, ".#o*oooooo#.", ".##########.", "...==..==...", "..###..###.."],
+  walkA: [...TERMINAL_HEAD, ".#o*oooooo#.", ".##########.", "..==....==..", ".###....###."],
+  walkB: [...TERMINAL_HEAD, ".#o*oooooo#.", ".##########.", "....==.==...", "...###.###.."],
+  typeA: [...TERMINAL_HEAD, "##o*oooooo#.", "=##########.", "...==..==...", "..###..###.."],
+  typeB: [...TERMINAL_HEAD, ".#o*oooooo##", ".##########=", "...==..==...", "..###..###.."],
+  kick: [...TERMINAL_HEAD, ".#o*oooooo#.", ".##########.", "...==...####", "..###......."],
+  wave: [".###########", ".#oooooooo#=", ".#o*oooooo#.", ".#oo*o**oo#.", ".#o*oooooo#.", ".##########.", "...==..==...", "..###..###.."],
+  sleep: [".##########.", ".#oooooooo#.", ".#oooooooo#.", ".#o==o==oo#.", ".#oooooooo#.", ".##########.", "...==..==...", "..###..###.."],
+  sit: [...TERMINAL_HEAD, ".#o*oooooo#.", ".##########.", "............", "............"],
+};
+
+export const PROVIDER_MASCOTS = {
+  claude: { frames: MASCOT, palette: MASCOT_PALETTE },
+  codex: { frames: CODEX_MASCOT, palette: CODEX_PALETTE },
+  opencode: { frames: OPENCODE_MASCOT, palette: OPENCODE_PALETTE },
+};
+
 export interface Hat {
   name: string;
   rows: string[]; // bottom row is drawn on the mascot's ear row
@@ -247,13 +270,13 @@ export interface Accessory extends Sprite {
   name: string;
   // Full mascot width keeps horizontal mirroring aligned with the body.
   // Face accessories follow each provider's eye line; clothes share an anchor.
-  y: { claude: number; codex: number };
+  y: Record<keyof typeof PROVIDER_MASCOTS, number>;
 }
 
 export const ACCESSORIES: Accessory[] = [
   {
     name: "sunglasses",
-    y: { claude: 1, codex: 2 },
+    y: { claude: 1, codex: 2, opencode: 2 },
     rows: [
       ".#*##==#*##.",
       "..###..###..",
@@ -262,31 +285,31 @@ export const ACCESSORIES: Accessory[] = [
   },
   {
     name: "round glasses",
-    y: { claude: 1, codex: 2 },
+    y: { claude: 1, codex: 2, opencode: 2 },
     rows: ["..###..###..", ".#...##...#.", "..###..###.."],
     palette: { "#": 0xe8b923 },
   },
   {
     name: "neon visor",
-    y: { claude: 2, codex: 3 },
+    y: { claude: 2, codex: 3, opencode: 3 },
     rows: [".##########.", ".#**%%%%**#."],
     palette: { "#": 0x24334d, "%": 0x2bb5c8, "*": 0xb9ffff },
   },
   {
     name: "eye patch",
-    y: { claude: 1, codex: 2 },
+    y: { claude: 1, codex: 2, opencode: 2 },
     rows: ["..###======.", "..###......."],
     palette: { "#": 0x111111, "=": 0x57483d },
   },
   {
     name: "bow tie",
-    y: { claude: 4, codex: 4 },
+    y: { claude: 4, codex: 4, opencode: 4 },
     rows: ["...##..##...", "...##**##..."],
     palette: { "#": 0xc03068, "*": 0xf2d24a },
   },
   {
     name: "striped scarf",
-    y: { claude: 4, codex: 4 },
+    y: { claude: 4, codex: 4, opencode: 4 },
     rows: ["..##%%##%%..", ".......##...", ".......%%..."],
     palette: { "#": 0x2f6fdb, "%": 0xf2d24a },
   },

@@ -1,10 +1,10 @@
-// Simulation: one mascot per Claude or Codex session, with a small behaviour state machine
+// Simulation: one mascot per coding session, with a small behaviour state machine
 // (enter, work, wait, coffee, football, nap, plant, wander, leave) and a football.
 
 import { Canvas, mix } from "./canvas.ts";
 import type { Desk, DeskState, Drawable, Layout, Pt } from "./office.ts";
 import type { AgentSession } from "./sessions.ts";
-import { ACCESSORIES, BALL, CODEX_MASCOT, CODEX_PALETTE, CUP, HATS, MASCOT, MASCOT_H, MASCOT_PALETTE, MASCOT_W, type Accessory, type Hat, type MascotFrame } from "./sprites.ts";
+import { ACCESSORIES, BALL, PROVIDER_MASCOTS, CUP, HATS, MASCOT_H, MASCOT_W, type Accessory, type Hat, type MascotFrame } from "./sprites.ts";
 
 type Activity =
   | { kind: "walk"; to: Pt; then: Activity }
@@ -461,8 +461,8 @@ export class Sim {
       draw: (cv: Canvas) => {
         const { frame, dy, flip } = this.frameFor(a, now);
         const yy = y + dy;
-        const codex = a.session.provider === "codex";
-        cv.blit({ rows: (codex ? CODEX_MASCOT : MASCOT)[frame], palette: codex ? CODEX_PALETTE : MASCOT_PALETTE }, x, yy, flip);
+        const mascot = PROVIDER_MASCOTS[a.session.provider];
+        cv.blit({ rows: mascot.frames[frame], palette: mascot.palette }, x, yy, flip);
         const hatTop = yy - (a.hat.rows.length - 1);
         cv.blit({ rows: a.hat.rows, palette: a.hat.palette }, x, hatTop, flip);
         cv.blit(a.accessory, x, yy + a.accessory.y[a.session.provider], flip);
