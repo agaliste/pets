@@ -1,7 +1,7 @@
 {
   "name": "pets",
   "version": "0.1.0",
-  "description": "A terminal office with mascots for every running Claude Code and Codex CLI session",
+  "description": "A terminal office with mascots for every running Claude Code, Codex CLI, and OpenCode session",
   "type": "module",
   "private": true,
   "scripts": {

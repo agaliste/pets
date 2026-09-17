@@ -18,8 +18,8 @@ starting another if you do not want two independent simulations and music polls.
 
 ## What appears
 
-- Each detected live Claude Code or Codex CLI session gets its existing pixel
-  mascot, hat, and accessory. Hats and accessories stay stable during its lifetime.
+- Each detected live Claude Code, Codex CLI, or OpenCode CLI session gets its
+  pixel mascot, hat, and accessory. Hats and accessories stay stable during its lifetime.
 - New agents arrive through a blue-and-cyan pixel wormhole: it opens with orbiting
   sparks, reveals the waving mascot and its accessories, then shrinks closed.
   The one-second entrance completes before roaming or football begins. Each live
@@ -63,8 +63,8 @@ The overlay passes all clicks through and never takes keyboard focus. Use the
 **⚽ menu-bar icon** to see session names/status/hats, pause or resume movement,
 hide/show the pets, or quit. **Ctrl+C** in the launching terminal also quits.
 The menu shows detection or Spotify errors; with no sessions it tells you to
-start Claude or Codex. Pause freezes movement while playback metadata and session
-status continue to update. macOS **Reduce Motion** also freezes movement.
+start Claude, Codex, or OpenCode. Pause freezes movement while playback metadata
+and session status continue to update. macOS **Reduce Motion** also freezes movement.
 
 ## Displays and Spaces
 
@@ -237,7 +237,9 @@ rebuilding, use `bun run src/desktop.ts` after a successful desktop build.
 
 Manual verification (run the app yourself):
 
-1. Start live CLI sessions and check that hats/statuses match the menu.
+1. Start live Claude, Codex, and OpenCode CLI sessions and check that hats/statuses
+   match the menu. OpenCode has a charcoal terminal mascot; ordinary TUI sessions
+   show unknown activity (see [session detection](README.md#session-detection)).
 2. Keep typing/clicking in another app while pets cross it; it should retain focus.
 3. With idle sessions, watch a pass across monitors. Check a stacked arrangement,
    a mixed-scale display, and unplug/reconnect if available.

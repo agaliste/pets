@@ -3,8 +3,9 @@
 Pixel companions for your coding sessions: a terminal office or floating macOS
 pets, with football, a Spotify singer, typing combat, and local achievements.
 
-Every running **Claude Code** or **Codex CLI** session gets a mascot. Claude is
-orange; Codex is a white robot. Each wears a hat and an accessory that stay with
+Every running **Claude Code**, **Codex CLI**, or **OpenCode** CLI session gets a
+mascot. Claude is orange; Codex is a white robot; OpenCode is a charcoal terminal
+with a mint prompt. Each wears a hat and an accessory that stay with
 it for its lifetime. Working agents get busy, idle agents take breaks, and new
 sessions join automatically. The animations are decorative and never send
 instructions to your coding agents.
@@ -19,8 +20,8 @@ cd pets
 bun install
 ```
 
-Start Claude Code or Codex CLI in another terminal, in any project directory.
-Choose a mode from the pets repository:
+Start Claude Code, Codex CLI, or [OpenCode](https://opencode.ai/docs/cli/) in
+another terminal, in any project directory. Choose a mode from the pets repository:
 
 ```sh
 # Animated office inside your terminal
@@ -48,7 +49,7 @@ are not verified.
 | --- | --- |
 | Bun | Installing dependencies, running TypeScript, builds, and local SQLite history |
 | A terminal with true-color and Unicode block-character support | Rendering the terminal office |
-| Running Claude Code or Codex CLI sessions | Coding-session mascots |
+| Running Claude Code, Codex CLI, or OpenCode sessions | Coding-session mascots |
 | Apple Command Line Tools / Swift compiler | Building the native desktop overlay |
 | Spotify desktop app, already running and playing | Optional singer in either mode |
 | Internet access to LRCLIB | Optional lyric lookup |
@@ -250,16 +251,31 @@ Pets observes existing CLI sessions without modifying their configuration:
   activity-event fallbacks. Titles come from `session_index.jsonl` when available.
 - Missing, unreadable, or ambiguous Codex rollouts leave a live mascot visible
   with **unknown** status. Historical transcripts alone never create mascots.
+- OpenCode detects interactive, `run`, and `attach` CLI processes, deduplicating
+  npm launchers. Administrative commands and standalone `serve`, `web`, and
+  `acp` servers do not create mascots. Each live CLI process gets one mascot;
+  saved conversations and database subagents do not create additional pets.
+- OpenCode uses `lsof` for the working directory and open SQLite database path,
+  including custom data locations. For local `--session <id>` / `-s <id>` runs,
+  it reads the exact root session and latest message in read-only mode. Recent
+  user/unfinished assistant messages imply working; terminal completions and
+  errors imply idle. Old messages from before process startup remain unknown.
+- Ordinary OpenCode sessions, `--continue`, forks, remote attachments, and
+  missing/ambiguous databases remain visible with **unknown** activity. Pets
+  never guesses a conversation from the newest history entry or shared cwd.
+  Metadata follows the explicit ID passed at launch; switching conversations
+  inside the TUI cannot be detected from process arguments. Activity from stored
+  messages is an inference, not OpenCode's live status API.
 
-Agent transcript formats are internal and can change. Unknown status is a
-fallback, not proof that a session is idle. Pets displays observed status; it
+Agent transcript formats and database schemas are internal and can change.
+Unknown status is a fallback, not proof that a session is idle. Pets displays observed status; it
 does not control the agents or create AI requests.
 
 ## Privacy and permissions at a glance
 
 | Feature | Reads or uses | Stores or sends |
 | --- | --- | --- |
-| Session mascots | Local processes, session registries, and bounded transcript chunks | Session metadata stays in memory and is displayed locally; no persistent session cache or network upload |
+| Session mascots | Local processes, session registries, bounded transcript chunks, and matching OpenCode database records | Session metadata stays in memory and is displayed locally; no persistent session cache or network upload |
 | Spotify singer | Playback metadata via macOS Automation | Song title, artist, album, and duration go to LRCLIB; lyrics stay in memory |
 | Typing combat | Eligible key timing and Accessibility caret geometry, with pointer fallback | Timing and position pass over a local process pipe; text and key codes are never sent or stored |
 | Typing history | Captured timestamps and local UTC offsets | Local SQLite events, summaries, combos, and unlocks; no network upload |
@@ -274,8 +290,8 @@ stdin/stdout pipes.
 
 | Symptom | What to check |
 | --- | --- |
-| No coding mascots | Start a live `claude` or `codex` CLI session and allow a few seconds for polling. Codex desktop/app-server sessions are excluded. Check the status bar or ⚽ menu for errors. |
-| Unknown status or missing title | The transcript may be unavailable, ambiguous, or in an unrecognized format. The live process can still appear. |
+| No coding mascots | Start a live `claude`, `codex`, or `opencode` CLI session and allow a few seconds for polling. Codex desktop/app-server sessions are excluded. Check the status bar or ⚽ menu for errors. |
+| Unknown status or missing title | Metadata may be unavailable, ambiguous, or in an unrecognized format. OpenCode normally shows unknown unless launched with a local explicit `--session` ID and an accessible database. The live process can still appear. |
 | Crowded terminal or missing disco | Enlarge the terminal. Small layouts intentionally omit features; the singer hides below 24 columns or 16 rows. |
 | No Spotify singer | Open Spotify yourself and play a track. Check Automation permission for the launching application and any displayed error. |
 | Lyrics missing or unsynced | Check connectivity to LRCLIB. A track may have only plain lyrics or no matching entry. |
@@ -313,7 +329,7 @@ Spotify synchronization, or visibility across Spaces; those need manual checks.
 | Source | Responsibility |
 | --- | --- |
 | `src/main.ts`, `src/term.ts`, `src/canvas.ts`, `src/office.ts`, `src/sim.ts` | Terminal input, rendering, room layout, and mascot simulation |
-| `src/sessions.ts`, `src/codex.ts` | Claude Code and Codex CLI discovery and activity parsing |
+| `src/sessions.ts`, `src/codex.ts`, `src/opencode.ts` | Claude Code, Codex CLI, and OpenCode discovery and activity parsing |
 | `src/music.ts`, `src/singer.ts` | Spotify playback, lyric lookup, and singer rendering |
 | `src/desktop.ts`, `src/desktop-scene.ts` | Desktop process coordination and scene simulation |
 | `src/combat.ts`, `src/typing-stats.ts`, `src/achievements.ts` | Typing effects, SQLite history, and milestones |

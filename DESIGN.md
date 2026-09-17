@@ -24,7 +24,8 @@ omitted:
 ## Overview
 
 A small animated pixel office viewed in a Mac terminal while coding. Preserve
-the existing orange Claude and white Codex sprites, furniture and football game.
+the orange Claude, white Codex, and charcoal OpenCode sprites, furniture and
+football game.
 The singer adds a microphone and lyric bubble to the same room. The audience is
 the local developer; copy is English and song text retains its original language.
 This is a terminal tool with no web routes or forms. No market-specific rules apply.
