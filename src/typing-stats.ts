@@ -10,6 +10,7 @@ export const COMBO_MIN_HITS = 5;
 export interface TypingPulse { at: number; monotonic: number; comboHit: boolean; utcOffsetMinutes?: number }
 interface ActiveCombo { id: string; start: number; end: number; last: number; hits: number; day: string }
 interface Day { day: string; keys: number; activeMinutes: number; combos: number; bestCombo: number }
+interface DayMetrics extends Pick<TypingMetrics, "activeDays" | "bestDay" | "dayStreak"> {}
 export interface StatsSnapshot {
   metrics: TypingMetrics;
   today: Day;
@@ -30,6 +31,8 @@ const emptyDay = (day: string): Day => ({ day, keys: 0, activeMinutes: 0, combos
 export class TypingStats {
   private db: Database;
   private active: ActiveCombo | null = null;
+  private dayMetrics: DayMetrics | null = null;
+  private locked: Set<string> | null = null;
   private closed = false;
 
   constructor(path = TYPING_DB_PATH) {
@@ -74,7 +77,8 @@ export class TypingStats {
         !Number.isFinite(p.monotonic) || typeof p.comboHit !== "boolean" ||
         (p.utcOffsetMinutes !== undefined && (!Number.isInteger(p.utcOffsetMinutes) || Math.abs(p.utcOffsetMinutes) > 14 * 60)))) throw new Error("Invalid typing pulse");
     let active = this.active ? { ...this.active } : null;
-    const newlyUnlocked = this.db.transaction(() => {
+    const { unlocked: newlyUnlocked, dayMetrics, locked } = this.db.transaction(() => {
+      let newDay = false, bestTouched = 0;
       for (const pulse of pulses) {
         const offset = pulse.utcOffsetMinutes ?? -new Date(pulse.at).getTimezoneOffset();
         const date = new Date(pulse.at + offset * 60_000), day = localDay(pulse.at, offset), minute = Math.floor(pulse.at / 60_000);
@@ -82,8 +86,11 @@ export class TypingStats {
         const count = this.db.query<{ keys: number }, [number]>(`INSERT INTO minutes(minute, keys) VALUES (?, 1)
           ON CONFLICT(minute) DO UPDATE SET keys = keys + 1 RETURNING keys`).get(minute)!.keys;
         const fresh = count === 1 ? 1 : 0;
-        this.db.query(`INSERT INTO days(day, keys, activeMinutes) VALUES (?, 1, ?)
-          ON CONFLICT(day) DO UPDATE SET keys = keys + 1, activeMinutes = activeMinutes + excluded.activeMinutes`).run(day, fresh);
+        const keys = this.db.query<{ keys: number }, [string, number]>(`INSERT INTO days(day, keys, activeMinutes) VALUES (?, 1, ?)
+          ON CONFLICT(day) DO UPDATE SET keys = keys + 1, activeMinutes = activeMinutes + excluded.activeMinutes
+          RETURNING keys`).get(day, fresh)!.keys;
+        newDay ||= keys === 1;
+        bestTouched = Math.max(bestTouched, keys);
         this.db.query(`INSERT INTO hours(hour, keys) VALUES (?, 1) ON CONFLICT(hour) DO UPDATE SET keys = keys + 1`).run(date.getUTCHours());
         this.db.query("UPDATE totals SET keys = keys + 1, activeMinutes = activeMinutes + ?, peakMinute = max(peakMinute, ?) WHERE id = 1").run(fresh, count);
         if (!pulse.comboHit) continue;
@@ -100,29 +107,51 @@ export class TypingStats {
         this.db.query("UPDATE totals SET combos = combos + ?, bestCombo = max(bestCombo, ?) WHERE id = 1").run(first, active.hits);
         this.db.query("UPDATE days SET combos = combos + ?, bestCombo = max(bestCombo, ?) WHERE day = ?").run(first, active.hits, active.day);
       }
-      return this.unlock(pulses.at(-1)!.at);
+      const dayMetrics = newDay || !this.dayMetrics ? this.scanDayMetrics()
+        : { ...this.dayMetrics, bestDay: Math.max(this.dayMetrics.bestDay, bestTouched) };
+      const currentLocked = this.locked ?? this.loadLocked();
+      const result = currentLocked.size ? this.unlock(pulses.at(-1)!.at, dayMetrics, currentLocked)
+        : { unlocked: [], locked: new Set<string>() };
+      return { unlocked: result.unlocked, dayMetrics, locked: result.locked };
     })();
     // An unsuccessful transaction leaves both persisted and in-memory combo state unchanged.
     this.active = active;
+    this.dayMetrics = dayMetrics;
+    this.locked = locked;
     return newlyUnlocked;
   }
 
   private metrics(): TypingMetrics {
     const totals = this.db.query<Omit<TypingMetrics, "activeDays" | "bestDay" | "dayStreak">, []>(
       "SELECT keys, combos, bestCombo, activeMinutes, peakMinute FROM totals WHERE id = 1").get()!;
-    const days = this.db.query<{ day: string; keys: number }, []>("SELECT day, keys FROM days WHERE keys > 0 ORDER BY day").all();
-    return { ...totals, activeDays: days.length, bestDay: Math.max(0, ...days.map(d => d.keys)), dayStreak: longestDayStreak(days.map(d => d.day)) };
+    return { ...totals, ...this.scanDayMetrics() };
   }
 
-  private unlock(at: number): AchievementProgress[] {
-    const metrics = this.metrics();
-    const result: AchievementProgress[] = [];
+  private scanDayMetrics(): DayMetrics {
+    const days = this.db.query<{ day: string; keys: number }, []>("SELECT day, keys FROM days WHERE keys > 0 ORDER BY day").all();
+    return { activeDays: days.length, bestDay: Math.max(0, ...days.map(d => d.keys)), dayStreak: longestDayStreak(days.map(d => d.day)) };
+  }
+
+  private loadLocked(): Set<string> {
+    const unlocked = new Set(this.db.query<{ id: string }, []>("SELECT id FROM achievements").all().map(a => a.id));
+    return new Set(ACHIEVEMENTS.filter(achievement => !unlocked.has(achievement.id)).map(achievement => achievement.id));
+  }
+
+  private unlock(at: number, dayMetrics: DayMetrics, locked: Set<string>): { unlocked: AchievementProgress[]; locked: Set<string> } {
+    const totals = this.db.query<Omit<TypingMetrics, keyof DayMetrics>, []>(
+      "SELECT keys, combos, bestCombo, activeMinutes, peakMinute FROM totals WHERE id = 1").get()!;
+    const metrics = { ...totals, ...dayMetrics };
+    const remaining = new Set(locked), result: AchievementProgress[] = [];
     for (const achievement of ACHIEVEMENTS) {
+      if (!remaining.has(achievement.id)) continue;
       if (metrics[achievement.metric] < achievement.target) continue;
       const inserted = this.db.query("INSERT OR IGNORE INTO achievements(id, unlocked_at) VALUES (?, ?)").run(achievement.id, at);
-      if (inserted.changes) result.push({ ...achievement, progress: metrics[achievement.metric], unlockedAt: at });
+      if (inserted.changes) {
+        result.push({ ...achievement, progress: metrics[achievement.metric], unlockedAt: at });
+        remaining.delete(achievement.id);
+      }
     }
-    return result;
+    return { unlocked: result, locked: remaining };
   }
 
   snapshot(now = Date.now(), offset = -new Date(now).getTimezoneOffset()): StatsSnapshot {
@@ -155,6 +184,8 @@ export class TypingStats {
       this.db.exec("UPDATE totals SET keys = 0, combos = 0, bestCombo = 0, activeMinutes = 0, peakMinute = 0 WHERE id = 1");
     })();
     this.active = null;
+    this.dayMetrics = null;
+    this.locked = null;
     // secure_delete clears deleted payloads; truncate the WAL after the committed reset.
     this.db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
   }
