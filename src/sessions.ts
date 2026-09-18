@@ -121,6 +121,7 @@ export class SessionTracker {
   private cwdCache = new Map<number, string>();
   private titles = new Map<number, TitleCache>();
   private transcriptScan = new Map<string, { at: number; mtime: number }>();
+  private registryCache = new Map<string, { mtime: number; size: number; entry: RegistryEntry | null }>();
   private polling = false;
   lastError: string | null = null;
 
@@ -197,18 +198,13 @@ export class SessionTracker {
     } catch {
       files = [];
     }
+    const names = files.filter((f) => f.endsWith(".json")); // never touch the .key files
+    const entries = await Promise.all(names.map((f) => this.readRegistryFile(dir, f)));
+    const present = new Set(names);
+    for (const f of this.registryCache.keys()) if (!present.has(f)) this.registryCache.delete(f);
     const seen = new Set<number>();
-    for (const f of files) {
-      if (!f.endsWith(".json")) continue; // never touch the .key files
-      let entry: RegistryEntry;
-      try {
-        const path = join(dir, f);
-        if ((await stat(path)).size > REGISTRY_MAX_BYTES) continue;
-        entry = JSON.parse(await readFile(path, "utf8")) as RegistryEntry;
-      } catch {
-        continue;
-      }
-      if (typeof entry.pid !== "number") continue;
+    for (const entry of entries) {
+      if (!entry || typeof entry.pid !== "number") continue;
       if (!this.livePids.has(entry.pid) || !isAlive(entry.pid)) continue;
       seen.add(entry.pid);
       const cwd = entry.cwd ?? this.cwdCache.get(entry.pid) ?? "?";
@@ -260,6 +256,32 @@ export class SessionTracker {
         lastActivity: activity,
       });
     }
+  }
+
+  /** Re-parses a registry file only when its mtime or size changed since the last poll. */
+  private async readRegistryFile(dir: string, f: string): Promise<RegistryEntry | null> {
+    const path = join(dir, f);
+    let st: Awaited<ReturnType<typeof stat>>;
+    try {
+      st = await stat(path);
+    } catch {
+      this.registryCache.delete(f);
+      return null;
+    }
+    if (st.size > REGISTRY_MAX_BYTES) {
+      this.registryCache.delete(f);
+      return null;
+    }
+    const cached = this.registryCache.get(f);
+    if (cached && cached.mtime === st.mtimeMs && cached.size === st.size) return cached.entry;
+    let entry: RegistryEntry | null = null;
+    try {
+      entry = JSON.parse(await readFile(path, "utf8")) as RegistryEntry;
+    } catch {
+      entry = null;
+    }
+    this.registryCache.set(f, { mtime: st.mtimeMs, size: st.size, entry });
+    return entry;
   }
 
   private async readCodexSessions(now: number): Promise<void> {
@@ -346,14 +368,9 @@ export class SessionTracker {
 
   private async scanTranscripts(dir: string): Promise<number> {
     try {
-      const files = await readdir(dir);
-      let newest = 0;
-      for (const f of files) {
-        if (!f.endsWith(".jsonl")) continue;
-        const st = await stat(join(dir, f));
-        if (st.mtimeMs > newest) newest = st.mtimeMs;
-      }
-      return newest;
+      const files = (await readdir(dir)).filter((f) => f.endsWith(".jsonl"));
+      const mtimes = await Promise.all(files.map((f) => stat(join(dir, f)).then((st) => st.mtimeMs, () => 0)));
+      return mtimes.reduce((newest, m) => (m > newest ? m : newest), 0);
     } catch {
       return 0;
     }
