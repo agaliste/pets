@@ -56,20 +56,59 @@ export function parseSpotify(raw: string): Track | null {
   return { id, title, artist, album, duration, position: Math.min(position, duration) };
 }
 
+// LRCLIB bodies are crowd-sourced; real lyrics are a few KB, so cap bytes and lines well below anything legitimate.
+export const MAX_LYRICS_BYTES = 256 * 1024;
+export const MAX_LYRIC_LINES = 2000;
+const MAX_LYRIC_LINE_CHARS = 500;
+
 export function parseLrc(source: string): LyricLine[] {
   const lines: LyricLine[] = [];
   const offset = Number(source.match(/\[offset:([+-]?\d+)\]/i)?.[1] ?? 0) / 1000;
   for (const row of source.split(/\r?\n/)) {
+    if (lines.length >= MAX_LYRIC_LINES) break;
     const stamps = [...row.matchAll(/\[(\d+):([0-5]\d)(?:[.:](\d{1,3}))?\]/g)];
     if (!stamps.length) continue;
     const last = stamps[stamps.length - 1]!;
-    const text = row.slice(last.index! + last[0].length).replace(/<\d+:\d+(?:\.\d+)?>/g, "").trim();
+    const start = last.index! + last[0].length;
+    const text = row.slice(start, start + MAX_LYRIC_LINE_CHARS).replace(/<\d+:\d+(?:\.\d+)?>/g, "").trim();
     for (const stamp of stamps) {
+      if (lines.length >= MAX_LYRIC_LINES) break;
       const at = Number(stamp[1]) * 60 + Number(stamp[2]) + Number(`0.${stamp[3] ?? "0"}`) - offset;
       lines.push({ at: Math.max(0, at), text });
     }
   }
   return lines.sort((a, b) => a.at - b.at);
+}
+
+export function parsePlain(source: string): string[] {
+  const lines: string[] = [];
+  for (const row of source.split(/\r?\n/)) {
+    if (lines.length >= MAX_LYRIC_LINES) break;
+    const text = row.slice(0, MAX_LYRIC_LINE_CHARS).trim();
+    if (text) lines.push(text);
+  }
+  return lines;
+}
+
+/** Reads at most `limit` bytes, failing before the whole body is buffered. */
+export async function readBounded(response: Response, limit: number): Promise<string> {
+  if (Number(response.headers.get("content-length") ?? 0) > limit) throw new Error("Oversized lyrics response");
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > limit) throw new Error("Oversized lyrics response");
+      chunks.push(value);
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+  return new TextDecoder().decode(Buffer.concat(chunks));
 }
 
 export function lyricAt(lines: LyricLine[], position: number): string {
@@ -92,12 +131,17 @@ export async function fetchLyrics(track: Track, signal: AbortSignal, fetcher: (u
   });
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`Lyrics request failed (${response.status})`);
-  const data = await response.json() as Record<string, unknown>;
+  let data: unknown;
+  try { data = JSON.parse(await readBounded(response, MAX_LYRICS_BYTES)); } catch (error) {
+    if (error instanceof SyntaxError) throw new Error("Invalid lyrics response");
+    throw error;
+  }
   if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("Invalid lyrics response");
+  const { syncedLyrics, plainLyrics, instrumental } = data as Record<string, unknown>;
   return {
-    lines: typeof data.syncedLyrics === "string" ? parseLrc(data.syncedLyrics) : [],
-    plain: typeof data.plainLyrics === "string" ? data.plainLyrics.split(/\r?\n/).map((s) => s.trim()).filter(Boolean) : [],
-    instrumental: data.instrumental === true,
+    lines: typeof syncedLyrics === "string" ? parseLrc(syncedLyrics) : [],
+    plain: typeof plainLyrics === "string" ? parsePlain(plainLyrics) : [],
+    instrumental: instrumental === true,
   };
 }
 
