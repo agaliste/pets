@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { fetchLyrics, lyricAt, MusicTracker, parseLrc, parseSpotify, SPOTIFY_SCRIPT, type Lyrics, type Track } from "./music.ts";
+import { fetchLyrics, lyricAt, MAX_LYRIC_LINES, MAX_LYRICS_BYTES, MusicTracker, parseLrc, parsePlain, parseSpotify, SPOTIFY_SCRIPT, type Lyrics, type Track } from "./music.ts";
 
 const track: Track = { id: "spotify:track:a", title: "Test & song", artist: "Artist", album: "Album", duration: 120, position: 0 };
 const raw = (position = 0, id = track.id) => [id, track.title, track.artist, track.album, 120000, position].join("\x1f") + "\n";
@@ -40,6 +40,30 @@ test("LRCLIB request encodes metadata and handles synced/plain/missing/errors wi
   expect(await fetchLyrics(track, signal, async () => new Response(null, { status: 404 }))).toBeNull();
   await expect(fetchLyrics(track, signal, async () => new Response(null, { status: 429 }))).rejects.toThrow("429");
   await expect(fetchLyrics(track, signal, async () => Response.json(null))).rejects.toThrow("Invalid lyrics");
+});
+
+test("oversized LRCLIB bodies are rejected before buffering and parsed lines are capped", async () => {
+  const signal = new AbortController().signal;
+  let cancelled = false;
+  const declaredBody = new ReadableStream<Uint8Array>({ pull(c) { c.enqueue(new Uint8Array(16)); }, cancel() { cancelled = true; } });
+  const declared = new Response(declaredBody, { headers: { "content-length": String(MAX_LYRICS_BYTES + 1) } });
+  await expect(fetchLyrics(track, signal, async () => declared)).rejects.toThrow("Oversized");
+  expect(cancelled).toBe(true);
+  const enhanced = "[00:00]" + Array.from({ length: 45 }, (_, i) => `<00:${String(i).padStart(2, "0")}.00>word `).join("");
+  const enhancedLines = parseLrc(enhanced);
+  expect(enhancedLines).toEqual([{ at: 0, text: Array(45).fill("word").join(" ") }]);
+  expect(enhancedLines[0]!.text).not.toMatch(/[<>]/);
+  let produced = 0;
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) { produced += 65_536; controller.enqueue(new Uint8Array(65_536).fill(0x20)); },
+  });
+  await expect(fetchLyrics(track, signal, async () => new Response(stream))).rejects.toThrow("Oversized");
+  expect(produced).toBeLessThanOrEqual(MAX_LYRICS_BYTES + 2 * 65_536);
+  const huge = Array.from({ length: MAX_LYRIC_LINES * 2 }, (_, i) => `[00:${String(i % 60).padStart(2, "0")}]${"x".repeat(1000)}`).join("\n");
+  const lines = parseLrc(huge);
+  expect(lines.length).toBe(MAX_LYRIC_LINES);
+  expect(lines[0]!.text.length).toBe(500);
+  expect(parsePlain(huge).length).toBe(MAX_LYRIC_LINES);
 });
 
 test("playback interpolates between polls, follows seeks and repeat, and hides on pause/staleness/end", async () => {
