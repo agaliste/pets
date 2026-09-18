@@ -69,8 +69,7 @@ export function parseLrc(source: string): LyricLine[] {
     const stamps = [...row.matchAll(/\[(\d+):([0-5]\d)(?:[.:](\d{1,3}))?\]/g)];
     if (!stamps.length) continue;
     const last = stamps[stamps.length - 1]!;
-    const start = last.index! + last[0].length;
-    const text = row.slice(start, start + MAX_LYRIC_LINE_CHARS).replace(/<\d+:\d+(?:\.\d+)?>/g, "").trim();
+    const text = row.slice(last.index! + last[0].length).replace(/<\d+:\d+(?:\.\d+)?>/g, "").trim().slice(0, MAX_LYRIC_LINE_CHARS);
     for (const stamp of stamps) {
       if (lines.length >= MAX_LYRIC_LINES) break;
       const at = Number(stamp[1]) * 60 + Number(stamp[2]) + Number(`0.${stamp[3] ?? "0"}`) - offset;
@@ -92,7 +91,10 @@ export function parsePlain(source: string): string[] {
 
 /** Reads at most `limit` bytes, failing before the whole body is buffered. */
 export async function readBounded(response: Response, limit: number): Promise<string> {
-  if (Number(response.headers.get("content-length") ?? 0) > limit) throw new Error("Oversized lyrics response");
+  if (Number(response.headers.get("content-length") ?? 0) > limit) {
+    await response.body?.cancel().catch(() => {});
+    throw new Error("Oversized lyrics response");
+  }
   if (!response.body) return "";
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];

@@ -44,8 +44,15 @@ test("LRCLIB request encodes metadata and handles synced/plain/missing/errors wi
 
 test("oversized LRCLIB bodies are rejected before buffering and parsed lines are capped", async () => {
   const signal = new AbortController().signal;
-  const declared = new Response("{}", { headers: { "content-length": String(MAX_LYRICS_BYTES + 1) } });
+  let cancelled = false;
+  const declaredBody = new ReadableStream<Uint8Array>({ pull(c) { c.enqueue(new Uint8Array(16)); }, cancel() { cancelled = true; } });
+  const declared = new Response(declaredBody, { headers: { "content-length": String(MAX_LYRICS_BYTES + 1) } });
   await expect(fetchLyrics(track, signal, async () => declared)).rejects.toThrow("Oversized");
+  expect(cancelled).toBe(true);
+  const enhanced = "[00:00]" + Array.from({ length: 45 }, (_, i) => `<00:${String(i).padStart(2, "0")}.00>word `).join("");
+  const enhancedLines = parseLrc(enhanced);
+  expect(enhancedLines).toEqual([{ at: 0, text: Array(45).fill("word").join(" ") }]);
+  expect(enhancedLines[0]!.text).not.toMatch(/[<>]/);
   let produced = 0;
   const stream = new ReadableStream<Uint8Array>({
     pull(controller) { produced += 65_536; controller.enqueue(new Uint8Array(65_536).fill(0x20)); },
