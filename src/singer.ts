@@ -60,6 +60,8 @@ export class Singer {
   private nextAdlib = 0;
   private lyricText = "";
   private lyricSince = 0;
+  private lyricWidth = 0;
+  private lyricLines: string[] = [];
   private adlib: { pid: number; text: string; until: number } | null = null;
 
   constructor(private readonly random = Math.random) {}
@@ -73,10 +75,12 @@ export class Singer {
       this.nextAdlib = now + 6000;
       this.adlib = null;
       this.lyricText = "";
+      this.lyricWidth = 0;
     }
-    if (music.text !== this.lyricText) { this.lyricText = music.text; this.lyricSince = now; }
     const width = Math.min(48, cv.cols - 2);
-    const allLines = wrapBubble(music.text, width - 4);
+    if (music.text !== this.lyricText) { this.lyricText = music.text; this.lyricSince = now; this.lyricWidth = 0; }
+    if (width !== this.lyricWidth) { this.lyricWidth = width; this.lyricLines = wrapBubble(music.text, width - 4); }
+    const allLines = this.lyricLines;
     // Paginate long lines; timing of short lines stays entirely driven by LRC.
     const page = Math.floor((now - this.lyricSince) / 4000) % Math.ceil(allLines.length / 2);
     const lines = allLines.slice(page * 2, page * 2 + 2);

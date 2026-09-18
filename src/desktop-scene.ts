@@ -28,6 +28,7 @@ const LIGHTNING_SECONDS = 0.55;
 const LIGHTNING_SCALE = 2.5;
 const WORK_CALLOUT_SECONDS = 1.15;
 const WORK_CALLOUT = pixelLabel("WORK!", MUSIC_COLORS.text, MUSIC_COLORS.background);
+const LYRIC_LABELS: Record<MusicView["state"], string> = { synced: "", plain: "Lyrics · unsynced · ", loading: "Finding lyrics · ", missing: "No lyrics · ", instrumental: "Instrumental · ", error: "Lyrics unavailable · " };
 const speed = (p: Point, q: Point, amount: number): Point => {
   const d = Math.hypot(q.x - p.x, q.y - p.y);
   return d ? { x: (q.x - p.x) / d * amount, y: (q.y - p.y) / d * amount } : { x: 0, y: 0 };
@@ -172,6 +173,8 @@ export class DesktopScene {
   private nextKick = 0;
   private lyric = "";
   private lyricSince = 0;
+  private lyricLines: string[] = [];
+  private bubbleTitle = { key: "", text: "" };
   private explosions: Array<Point & { born: number; provider: AgentSession["provider"]; phase: number; start: Point; direction: number; body: Placement[] }> = [];
   private renderedPets = new Map<number, Placement[]>();
   private readonly shots: FootballEffects;
@@ -382,13 +385,14 @@ export class DesktopScene {
       place("microphone", x + (this.singer.flip ? -12 : 46), y + 8);
       place("note", x + 60, y - 22 - (paused ? 0 : now * 12 % 20));
       const lyricKey = `${music.track.id}\0${music.text}`;
-      if (lyricKey !== this.lyric) { this.lyric = lyricKey; this.lyricSince = this.readingTime; }
-      const lines = wrapBubble(music.text, 36);
+      if (lyricKey !== this.lyric) { this.lyric = lyricKey; this.lyricSince = this.readingTime; this.lyricLines = wrapBubble(music.text, 36); }
+      const lines = this.lyricLines;
       const page = Math.floor((this.readingTime - this.lyricSince) / 4) % Math.ceil(lines.length / 2);
-      const labels: Record<MusicView["state"], string> = { synced: "", plain: "Lyrics · unsynced · ", loading: "Finding lyrics · ", missing: "No lyrics · ", instrumental: "Instrumental · ", error: "Lyrics unavailable · " };
+      const titleKey = `${LYRIC_LABELS[music.state]}${music.track.artist} · ${music.track.title}`;
+      if (titleKey !== this.bubbleTitle.key) this.bubbleTitle = { key: titleKey, text: clipText(cleanText(titleKey), 100) };
       frame.bubbles.push({
         x: this.singer.x, y: y - 24, screen: nearestScreen(this.screens, this.singer)!.id,
-        title: clipText(cleanText(`${labels[music.state]}${music.track.artist} · ${music.track.title}`), 100),
+        title: this.bubbleTitle.text,
         lines: lines.slice(page * 2, page * 2 + 2),
       });
     } else this.singer = null;
