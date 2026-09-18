@@ -36,6 +36,7 @@ export type ClaudeSession = AgentSession;
 
 const PS_INTERVAL = 2500;
 const REGISTRY_INTERVAL = 1000;
+const REGISTRY_MAX_BYTES = 64 * 1024;
 const TITLE_INTERVAL_FOUND = 60_000;
 const TITLE_INTERVAL_MISSING = 8_000;
 const TAIL_BYTES = 256 * 1024;
@@ -201,7 +202,9 @@ export class SessionTracker {
       if (!f.endsWith(".json")) continue; // never touch the .key files
       let entry: RegistryEntry;
       try {
-        entry = JSON.parse(await readFile(join(dir, f), "utf8")) as RegistryEntry;
+        const path = join(dir, f);
+        if ((await stat(path)).size > REGISTRY_MAX_BYTES) continue;
+        entry = JSON.parse(await readFile(path, "utf8")) as RegistryEntry;
       } catch {
         continue;
       }
