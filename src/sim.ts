@@ -61,6 +61,8 @@ export class Sim {
   private L: Layout;
   private ball: Ball | null = null;
   private goalFlash: { text: string; until: number } | null = null;
+  /** Agents currently in the football activity; rebuilt each frame and kept exact through the step loop. */
+  private footballers = new Set<Agent>();
   score = { l: 0, r: 0 };
 
   constructor(layout: Layout) {
@@ -110,6 +112,8 @@ export class Sim {
         a.act = { kind: "wave", until: now + 1600 };
       }
     }
+    this.footballers.clear();
+    for (const a of this.agents.values()) if (a.act.kind === "football") this.footballers.add(a);
     for (const a of this.agents.values()) this.step(a, now, dt);
     for (const [pid, a] of this.agents) if (a.act.kind === "gone") this.agents.delete(pid);
     this.stepBall(now, dt);
@@ -202,8 +206,8 @@ export class Sim {
         if (now >= act.until) this.begin(a, this.pickLeisure(a, now), now);
         return;
       case "football":
-        if (this.busy(a)) { this.goWork(a); return; }
-        if (now >= act.until || !this.ball) { this.begin(a, this.pickLeisure(a, now), now); return; }
+        if (this.busy(a)) { this.footballers.delete(a); this.goWork(a); return; }
+        if (now >= act.until || !this.ball) { this.footballers.delete(a); this.begin(a, this.pickLeisure(a, now), now); return; }
         this.playFootball(a, now, dt);
         return;
     }
@@ -257,9 +261,10 @@ export class Sim {
       case "football": {
         const p = this.L.pitch;
         if (!p) { a.act = { kind: "wait", until: now }; return; }
-        const players = [...this.agents.values()].filter((o) => o !== a && o.act.kind === "football");
-        a.footSide = players.length === 0 ? (Math.random() < 0.5 ? 1 : -1) : (players.length % 2 === 0 ? 1 : -1);
+        const players = this.otherFootballers(a);
+        a.footSide = players === 0 ? (Math.random() < 0.5 ? 1 : -1) : (players % 2 === 0 ? 1 : -1);
         a.act = next;
+        this.footballers.add(a);
         return;
       }
       default:
@@ -339,8 +344,11 @@ export class Sim {
     b.vx = vx;
     b.vy = Math.min(18, Math.max(-18, (goalCenterY - b.y) / t));
     a.kickUntil = now + 380;
-    const solo = ![...this.agents.values()].some((o) => o !== a && o.act.kind === "football");
-    if (solo) a.footSide = a.footSide === 1 ? -1 : 1;
+    if (this.otherFootballers(a) === 0) a.footSide = a.footSide === 1 ? -1 : 1;
+  }
+
+  private otherFootballers(a: Agent): number {
+    return this.footballers.size - (this.footballers.has(a) ? 1 : 0);
   }
 
   private stepBall(now: number, dt: number): void {
