@@ -146,10 +146,8 @@ class App {
   private drawStatus(cv: Canvas, sessions: AgentSession[], now: number): void {
     const row0 = cv.rows - 2, row1 = cv.rows - 1;
     cv.fillRect(0, row0 * 2, cv.w, 4, BAR_BG);
-    for (let c = 0; c < cv.cols; c++) {
-      cv.putText(c, row0, " ", BAR_FG, BAR_BG);
-      cv.putText(c, row1, " ", BAR_FG, BAR_BG);
-    }
+    cv.fillText(0, row0, cv.cols, BAR_FG, BAR_BG);
+    cv.fillText(0, row1, cv.cols, BAR_FG, BAR_BG);
 
     const busy = sessions.filter((s) => s.status === "busy").length;
     const idle = sessions.filter((s) => s.status === "idle").length;

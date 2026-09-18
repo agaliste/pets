@@ -13,19 +13,26 @@ export interface TextCell {
 }
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+const CONTROL = /[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g;
+// Printable ASCII: every char is its own grapheme and exactly one cell wide.
+const ASCII = /^[\x20-\x7e]*$/;
 
 /** External text must never emit terminal control sequences. */
 export function cleanText(s: string): string {
-  return s.replace(/[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g, " ").replace(/\s+/g, " ").trim();
+  return s.replace(CONTROL, " ").replace(/\s+/g, " ").trim();
 }
 
 export function textParts(s: string): string[] {
-  return Array.from(graphemes.segment(cleanText(s)), (part) => part.segment);
+  const clean = cleanText(s);
+  if (ASCII.test(clean)) return clean.split("");
+  return Array.from(graphemes.segment(clean), (part) => part.segment);
 }
 
 export function clipText(s: string, width: number): string {
+  const clean = cleanText(s);
+  if (ASCII.test(clean)) return clean.length <= width ? clean : clean.slice(0, Math.max(0, width));
   let out = "", used = 0;
-  for (const part of textParts(s)) {
+  for (const { segment: part } of graphemes.segment(clean)) {
     const w = Bun.stringWidth(part);
     if (used + w > width) break;
     out += part;
@@ -156,21 +163,45 @@ export class Canvas {
     if (row < 0 || row >= this.rows) return;
     let c = Math.round(col);
     // Preserve intentional padding; strip only control characters here.
-    for (const { segment: ch } of graphemes.segment(s.replace(/[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g, " "))) {
+    const clean = s.replace(CONTROL, " ");
+    if (ASCII.test(clean)) {
+      for (let i = 0; i < clean.length; i++, c++) this.putCell(row, c, clean[i]!, 1, fg, bg);
+      return;
+    }
+    for (const { segment: ch } of graphemes.segment(clean)) {
       const width = Bun.stringWidth(ch);
       if (!width) continue;
-      if (c >= 0 && c + width <= this.cols) {
-        const base = row * this.cols;
-        for (let x = c; x < c + width; x++) {
-          const old = this.text[base + x];
-          if (old?.width === 0 && x > 0) this.text[base + x - 1] = { ch: " ", fg, bg };
-          if ((old?.width ?? 1) > 1) this.text[base + x + 1] = { ch: " ", fg, bg };
-        }
-        for (let x = c; x < c + width; x++) {
-          this.text[base + x] = { ch: x === c ? ch : "", fg, bg, width: x === c ? width : 0 };
-        }
-      }
+      this.putCell(row, c, ch, width, fg, bg);
       c += width;
+    }
+  }
+
+  /** Fill `width` cells of a terminal row with spaces, as if by putText(" ".repeat(width)). */
+  fillText(col: number, row: number, width: number, fg: RGB, bg?: RGB): void {
+    if (row < 0 || row >= this.rows) return;
+    const c0 = Math.max(0, Math.round(col)), c1 = Math.min(this.cols, Math.round(col) + width);
+    const base = row * this.cols;
+    if (c0 > 0) {
+      const left = this.text[base + c0];
+      if (left?.width === 0) this.text[base + c0 - 1] = { ch: " ", fg, bg };
+    }
+    if (c1 < this.cols) {
+      const right = this.text[base + c1 - 1];
+      if ((right?.width ?? 1) > 1) this.text[base + c1] = { ch: " ", fg, bg };
+    }
+    for (let x = c0; x < c1; x++) this.text[base + x] = { ch: " ", fg, bg, width: 1 };
+  }
+
+  private putCell(row: number, c: number, ch: string, width: number, fg: RGB, bg: RGB | undefined): void {
+    if (c < 0 || c + width > this.cols) return;
+    const base = row * this.cols;
+    for (let x = c; x < c + width; x++) {
+      const old = this.text[base + x];
+      if (old?.width === 0 && x > 0) this.text[base + x - 1] = { ch: " ", fg, bg };
+      if ((old?.width ?? 1) > 1) this.text[base + x + 1] = { ch: " ", fg, bg };
+    }
+    for (let x = c; x < c + width; x++) {
+      this.text[base + x] = { ch: x === c ? ch : "", fg, bg, width: x === c ? width : 0 };
     }
   }
 
