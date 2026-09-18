@@ -10,7 +10,7 @@ export const COMBO_MIN_HITS = 5;
 export interface TypingPulse { at: number; monotonic: number; comboHit: boolean; utcOffsetMinutes?: number }
 interface ActiveCombo { id: string; start: number; end: number; last: number; hits: number; day: string }
 interface Day { day: string; keys: number; activeMinutes: number; combos: number; bestCombo: number }
-interface DayMetrics extends Pick<TypingMetrics, "activeDays" | "bestDay" | "dayStreak"> {}
+type DayMetrics = Pick<TypingMetrics, "activeDays" | "bestDay" | "dayStreak">;
 export interface StatsSnapshot {
   metrics: TypingMetrics;
   today: Day;
