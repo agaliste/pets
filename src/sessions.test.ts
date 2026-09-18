@@ -111,6 +111,28 @@ test("tracker combines providers, removes only launcher duplicates, and tracks c
   expect(tracker.list()).toEqual([]);
 });
 
+test("oversized registry files are skipped, even after a cached file grows past the limit", async () => {
+  const { root } = await fixture();
+  const claudePid = process.ppid;
+  const registry = join(root, "claude", "sessions");
+  await mkdir(registry, { recursive: true });
+  const entry = { pid: claudePid, cwd: "/work/claude", status: "busy", name: "Claude task" };
+  const oversized = JSON.stringify({ ...entry, name: "Huge", padding: "x".repeat(64 * 1024) });
+  await writeFile(join(registry, "claude.json"), JSON.stringify(entry));
+  await writeFile(join(registry, "huge.json"), oversized);
+  const tracker = new SessionTracker(async (cmd) => cmd[0] === "ps" ? `${claudePid} 1 00:10 claude\n` : "", join(root, "claude"));
+  const now = Date.now();
+  await tracker.poll(now);
+  expect(tracker.list()).toHaveLength(1);
+  expect(tracker.list()[0]).toMatchObject({ pid: claudePid, source: "registry", name: "Claude task", status: "busy" });
+  await writeFile(join(registry, "claude.json"), oversized);
+  await tracker.poll(now + 1100);
+  expect(tracker.list()[0]).toMatchObject({ pid: claudePid, source: "ps" });
+  await writeFile(join(registry, "claude.json"), JSON.stringify({ ...entry, status: "idle" }));
+  await tracker.poll(now + 2200);
+  expect(tracker.list()[0]).toMatchObject({ pid: claudePid, source: "registry", status: "idle" });
+});
+
 test("ambiguous rollouts and missing files keep a live mascot with unknown status", async () => {
   const { root, rollout } = await fixture();
   let files = `p201\nfcwd\nn/work\nf1\nn${rollout}\nf2\nn/tmp/rollout-other.jsonl\n`;

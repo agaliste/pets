@@ -36,6 +36,7 @@ export type ClaudeSession = AgentSession;
 
 const PS_INTERVAL = 2500;
 const REGISTRY_INTERVAL = 1000;
+const REGISTRY_MAX_BYTES = 64 * 1024;
 const TITLE_INTERVAL_FOUND = 60_000;
 const TITLE_INTERVAL_MISSING = 8_000;
 const TAIL_BYTES = 256 * 1024;
@@ -264,6 +265,10 @@ export class SessionTracker {
     try {
       st = await stat(path);
     } catch {
+      this.registryCache.delete(f);
+      return null;
+    }
+    if (st.size > REGISTRY_MAX_BYTES) {
       this.registryCache.delete(f);
       return null;
     }
