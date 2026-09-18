@@ -268,7 +268,11 @@ final class StatsWindowController: NSObject, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) { onVisibility?(false) }
 
     func showNotice(_ notice: AchievementNotice?, colors: [String: Int], suppressed: Bool) {
-        guard !suppressed, let notice else { toast?.orderOut(nil); return }
+        guard !suppressed, let notice else {
+            toastTimer?.invalidate()
+            if toast?.isVisible == true { toast?.orderOut(nil) }
+            return
+        }
         guard notice.id != lastNotice else { return }
         lastNotice = notice.id
         toastTimer?.invalidate()
