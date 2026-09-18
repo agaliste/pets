@@ -3,7 +3,7 @@ import { appendFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { codexIndexPath, isCodexCommand, parseCodexActivity, parseCodexFiles, parseCodexMetadata, parseCodexTitles, readChunk } from "./codex.ts";
-import { isClaudeCommand, SessionTracker } from "./sessions.ts";
+import { isClaudeCommand, isValidClaudeSessionId, isWithinDir, SessionTracker } from "./sessions.ts";
 import { CODEX_MASCOT, CODEX_PALETTE, OPENCODE_MASCOT, OPENCODE_PALETTE, MASCOT, MASCOT_H, MASCOT_W } from "./sprites.ts";
 
 const roots: string[] = [];
@@ -156,4 +156,38 @@ test("OpenCode animation frames fit existing hats and have complete palettes", (
       for (const pixel of row) if (pixel !== ".") expect(OPENCODE_PALETTE[pixel]).toBeDefined();
     }
   }
+});
+
+describe("claude transcript path", () => {
+  test("rejects session ids that could escape the projects directory", () => {
+    expect(isValidClaudeSessionId("3f1c2a4e-9b8d-4c7a-a1e2-0f9e8d7c6b5a")).toBe(true);
+    expect(isValidClaudeSessionId("session_1.v2")).toBe(true);
+    for (const bad of ["", ".", "..", "../etc/foo", "a/../../b", "a\\b", "a..b/c", "a\0b", ".hidden", "x.", undefined, 42]) {
+      expect(isValidClaudeSessionId(bad)).toBe(false);
+    }
+  });
+
+  test("isWithinDir only accepts paths strictly inside the directory", () => {
+    expect(isWithinDir("/home/u/.claude/projects/-work/abc.jsonl", "/home/u/.claude/projects")).toBe(true);
+    expect(isWithinDir("/home/u/.claude/projects/-work/../../x.jsonl", "/home/u/.claude/projects")).toBe(false);
+    expect(isWithinDir("/home/u/.claude/projects", "/home/u/.claude/projects")).toBe(false);
+    expect(isWithinDir("/home/u/.claude/projects-evil/x.jsonl", "/home/u/.claude/projects")).toBe(false);
+  });
+
+  test("traversal in a registry sessionId never reaches files outside projects", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pets-claude-"));
+    roots.push(root);
+    const claudeDir = join(root, ".claude");
+    await mkdir(join(claudeDir, "sessions"), { recursive: true });
+    await writeFile(join(root, "secret.jsonl"), JSON.stringify({ type: "ai-title", aiTitle: "LEAKED" }) + "\n");
+    const pid = process.ppid;
+    await writeFile(join(claudeDir, "sessions", `${pid}.json`), JSON.stringify({
+      pid, cwd: "/work", sessionId: "../../../secret", status: "idle", startedAt: Date.now(), updatedAt: Date.now(),
+    }));
+    const tracker = new SessionTracker(async (cmd) => (cmd[0] === "ps" ? `${pid} 1 00:05 claude\n` : ""), claudeDir);
+    await tracker.poll(Date.now());
+    const session = tracker.list().find((s) => s.pid === pid);
+    expect(session?.sessionId).toBeNull();
+    expect(session?.title).toBeNull();
+  });
 });

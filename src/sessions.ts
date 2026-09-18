@@ -11,7 +11,7 @@
 
 import { open, readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, join, resolve, sep } from "node:path";
 import { codexIndexPath, isCodexCommand, parseCodexActivity, parseCodexFiles, parseCodexMetadata, parseCodexTitles, readChunk } from "./codex.ts";
 import { parseOpenCodeCommand, parseOpenCodeFiles, readOpenCodeSession, type OpenCodeCommand } from "./opencode.ts";
 
@@ -84,6 +84,17 @@ function isAlive(pid: number): boolean {
 
 export function encodeProjectDir(cwd: string): string {
   return cwd.replace(/[^A-Za-z0-9]/g, "-");
+}
+
+// Claude session ids are UUID-like; anything else (path separators, `.`/`..`) is untrusted.
+export function isValidClaudeSessionId(id: unknown): id is string {
+  return typeof id === "string" && /^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$/.test(id);
+}
+
+export function isWithinDir(path: string, dir: string): boolean {
+  const root = resolve(dir);
+  const target = resolve(path);
+  return target.startsWith(root + sep);
 }
 
 interface RegistryEntry {
@@ -214,7 +225,7 @@ export class SessionTracker {
       this.sessions.set(entry.pid, {
         provider: "claude",
         pid: entry.pid,
-        sessionId: entry.sessionId ?? prev?.sessionId ?? null,
+        sessionId: isValidClaudeSessionId(entry.sessionId) ? entry.sessionId : prev?.sessionId ?? null,
         cwd,
         name: entry.name ?? prev?.name ?? basename(cwd),
         status,
@@ -359,7 +370,10 @@ export class SessionTracker {
   private transcriptPath(s: ClaudeSession): string | null {
     if (s.provider !== "claude") return null;
     if (!s.sessionId || s.cwd === "?") return null;
-    return join(this.claudeDir, "projects", encodeProjectDir(s.cwd), `${s.sessionId}.jsonl`);
+    if (!isValidClaudeSessionId(s.sessionId)) return null;
+    const projects = join(this.claudeDir, "projects");
+    const path = join(projects, encodeProjectDir(s.cwd), `${s.sessionId}.jsonl`);
+    return isWithinDir(path, projects) ? path : null;
   }
 
   private async refreshTitles(now: number): Promise<void> {
@@ -370,7 +384,9 @@ export class SessionTracker {
       const interval = cache?.title ? TITLE_INTERVAL_FOUND : TITLE_INTERVAL_MISSING;
       let mtime = cache?.mtime ?? 0;
       try {
-        mtime = (await stat(path)).mtimeMs;
+        const st = await stat(path);
+        if (!st.isFile()) continue;
+        mtime = st.mtimeMs;
       } catch {
         continue;
       }
