@@ -62,13 +62,27 @@ export function parseCodexFiles(output: string): Map<number, CodexFiles> {
 
 interface RecordLine { type?: string; timestamp?: string; payload?: Record<string, unknown> }
 
-function records(chunk: string): RecordLine[] {
-  return chunk.split("\n").flatMap((line) => {
-    try {
-      const value = JSON.parse(line);
-      return value && typeof value === "object" && !Array.isArray(value) ? [value as RecordLine] : [];
-    } catch { return []; } // A live writer may leave a partial line at either boundary.
-  });
+function parseRecord(line: string): RecordLine | undefined {
+  try {
+    const value = JSON.parse(line);
+    return value && typeof value === "object" && !Array.isArray(value) ? value as RecordLine : undefined;
+  } catch { return undefined; } // A live writer may leave a partial line at either boundary.
+}
+
+/** Lazily parse JSONL lines so callers that stop early skip the rest of the chunk. */
+function* records(chunk: string, reverse = false): Generator<RecordLine> {
+  const lines = chunk.split("\n");
+  if (reverse) {
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const record = parseRecord(lines[i]!);
+      if (record) yield record;
+    }
+  } else {
+    for (const line of lines) {
+      const record = parseRecord(line);
+      if (record) yield record;
+    }
+  }
 }
 
 export interface CodexMetadata {
@@ -78,7 +92,10 @@ export interface CodexMetadata {
 }
 
 export function parseCodexMetadata(head: string): CodexMetadata | null {
-  const meta = records(head).find((r) => r.type === "session_meta")?.payload;
+  let meta: Record<string, unknown> | undefined;
+  for (const record of records(head)) {
+    if (record.type === "session_meta") { meta = record.payload; break; }
+  }
   if (typeof meta?.id !== "string" || typeof meta.cwd !== "string") return null;
   return {
     sessionId: meta.id,
@@ -88,11 +105,9 @@ export function parseCodexMetadata(head: string): CodexMetadata | null {
 }
 
 export function parseCodexActivity(tail: string): { status: SessionStatus; lastActivity: number } {
-  const rows = records(tail);
   let lastActivity = 0;
   let active = false;
-  for (let i = rows.length - 1; i >= 0; i--) {
-    const row = rows[i]!;
+  for (const row of records(tail, true)) {
     const timestamp = Date.parse(row.timestamp ?? "");
     if (Number.isFinite(timestamp)) lastActivity = Math.max(lastActivity, timestamp);
     if (row.type !== "event_msg") continue;
@@ -109,7 +124,7 @@ export function parseCodexActivity(tail: string): { status: SessionStatus; lastA
 
 export function parseCodexTitles(chunk: string): Map<string, string> {
   const titles = new Map<string, string>();
-  for (const row of records(chunk) as Array<Record<string, unknown>>) {
+  for (const row of records(chunk) as Iterable<Record<string, unknown>>) {
     if (typeof row.id === "string" && typeof row.thread_name === "string" && row.thread_name.trim()) {
       titles.set(row.id, row.thread_name.trim());
     }
