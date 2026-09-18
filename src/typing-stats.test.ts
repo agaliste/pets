@@ -140,6 +140,16 @@ describe("anonymous typing history", () => {
     expect(stats.record(pulses(5, base + 20_000_000, 20_001_000)).some(a => a.id === "combos:10000")).toBe(false);
   });
 
+  test("recomputes day achievements incrementally", () => {
+    const stats = create();
+    stats.record(pulses(100));
+    expect(stats.snapshot(base).metrics.bestDay).toBe(100);
+    expect(stats.record(pulses(1, base + 10_000, 11_000))).toEqual([]);
+    expect(stats.record(pulses(1, base + 86_400_000, 100_000))).toEqual([]);
+    expect(stats.snapshot(base + 86_400_000).metrics.activeDays).toBe(2);
+    expect(stats.record(pulses(1, base + 2 * 86_400_000, 200_000)).some(a => a.id === "dayStreak:3")).toBe(true);
+  });
+
   test("rejects a malformed batch atomically and retains the pre-batch combo", () => {
     const stats = create();
     stats.record(pulses(4));
