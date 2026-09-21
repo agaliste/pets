@@ -96,7 +96,10 @@ display.
 - **Music:** a separate singer floats with a microphone, notes, and lyric bubble.
 
 Use the **⚽ menu-bar icon** for session summaries, errors, typing controls,
-**Stats & Achievements…**, **Pause movement**, **Hide pets**, and **Quit pets**.
+**Stats & Achievements…**, **Enable/Disable Spotify integration**, **Pause movement**,
+**Hide pets**, and **Quit pets**. Disabling Spotify stops playback polling and
+lyric lookups and hides the singer for the current run; it starts enabled again
+on the next launch.
 `Ctrl+C` in the launching terminal also quits.
 
 Pause freezes movement while session and song metadata continue updating.

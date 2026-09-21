@@ -157,6 +157,8 @@ export class MusicTracker {
   private nextPoll = 0;
   private polling = false;
   private closed = false;
+  private enabled = true;
+  private generation = 0;
   private lyrics: Lyrics | null = null;
   private state: LyricsState = "loading";
   private request: AbortController | null = null;
@@ -171,12 +173,13 @@ export class MusicTracker {
 
   async poll(): Promise<void> {
     const now = this.clock();
-    if (this.closed || this.polling || now < this.nextPoll) return;
+    if (this.closed || !this.enabled || this.polling || now < this.nextPoll) return;
+    const generation = this.generation;
     this.polling = true;
     this.nextPoll = now + 1000;
     try {
       const next = parseSpotify(await this.read());
-      if (this.closed) return;
+      if (this.closed || generation !== this.generation) return;
       const changed = this.key(next) !== this.key(this.track);
       this.track = next;
       this.sampledAt = this.clock();
@@ -192,6 +195,7 @@ export class MusicTracker {
         void this.load(next);
       }
     } catch (error) {
+      if (this.closed || generation !== this.generation) return;
       this.track = null;
       this.request?.abort();
       this.request = null;
@@ -220,10 +224,24 @@ export class MusicTracker {
     return { track: this.track, position, text, state: this.state };
   }
 
-  stop(): void {
-    this.closed = true;
+  setEnabled(enabled: boolean): void {
+    if (this.closed || this.enabled === enabled) return;
+    this.enabled = enabled;
+    // Invalidate pending playback reads, even after a quick disable/re-enable.
+    this.generation++;
     this.track = null;
+    this.lastError = null;
+    this.nextPoll = 0;
     this.request?.abort();
+    this.request = null;
+    this.lyrics = null;
+    this.state = "loading";
+    this.retryAt = 0;
+  }
+
+  stop(): void {
+    this.setEnabled(false);
+    this.closed = true;
   }
 
   private key(track: Track | null): string {

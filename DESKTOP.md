@@ -50,6 +50,10 @@ starting another if you do not want two independent simulations and music polls.
   suppress it without replaying it later.
 - Playing Spotify brings in a separate roaming singer, microphone, musical notes,
   and a lyric bubble. The singer does not count as a coding session.
+  Use **⚽ → Disable Spotify integration** to hide the singer, stop playback
+  polling, and cancel lyric lookups. **Enable Spotify integration** resumes it.
+  Like Pause/Hide, this choice applies to the current run; Spotify integration
+  starts enabled on the next launch. It never changes Spotify playback.
 - Typing combat adds a miniature 8-bit fight above your text caret. Each new
   keypress throws a strike; sustained typing builds bigger moves and callouts.
 
@@ -244,7 +248,10 @@ Manual verification (run the app yourself):
 3. With idle sessions, watch a pass across monitors. Check a stacked arrangement,
    a mixed-scale display, and unplug/reconnect if available.
 4. Play, pause, seek, and skip in Spotify. Check that the singer and lyric bubble
-   follow playback and remain readable near display edges.
+   follow playback and remain readable near display edges. Disable Spotify
+   integration from the menu: the singer/bubble should disappear while Spotify
+   keeps playing. Re-enable it and check that the current song returns. Repeat
+   quickly during a track change or lyric lookup; stale lyrics/errors must not return.
 5. Try Pause, Hide/Show, Reduce Motion, Spaces, full screen, and Stage Manager.
 6. Quit from the menu or Ctrl+C and check that pets and the menu icon disappear.
 7. Enable typing combat, type a streak in a supported text field, and check

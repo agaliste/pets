@@ -148,3 +148,78 @@ test("plain, missing and instrumental lyrics have honest fallback states", async
     tracker.stop();
   }
 });
+
+test("disabling music hides the singer, cancels lyrics and prevents IO until re-enabled", async () => {
+  let now = 0, reads = 0, lookups = 0;
+  let resolveOld!: (value: Lyrics) => void, oldSignal!: AbortSignal;
+  const tracker = new MusicTracker(async () => { reads++; return raw(1); }, async (_, signal) => {
+    lookups++;
+    if (lookups === 1) {
+      oldSignal = signal;
+      return new Promise(resolve => { resolveOld = resolve; });
+    }
+    return { ...lyrics, lines: [{ at: 0, text: "Fresh lyrics" }] };
+  }, () => now);
+  await tracker.poll();
+  expect(tracker.view()).not.toBeNull();
+  tracker.setEnabled(false);
+  expect(tracker.view()).toBeNull();
+  expect(oldSignal.aborted).toBe(true);
+  now = 5000;
+  await tracker.poll();
+  expect(reads).toBe(1);
+  expect(lookups).toBe(1);
+  tracker.setEnabled(true);
+  await tracker.poll(); await flush();
+  expect(reads).toBe(2);
+  expect(tracker.view()?.text).toBe("Fresh lyrics");
+  resolveOld(lyrics); await flush();
+  expect(tracker.view()?.text).toBe("Fresh lyrics");
+  tracker.stop();
+  tracker.setEnabled(true);
+  await tracker.poll();
+  expect(reads).toBe(2);
+  expect(tracker.view()).toBeNull();
+});
+
+test("a playback read finishing after disable cannot restore playback or errors, even after re-enable", async () => {
+  for (const rejects of [false, true]) {
+    for (const reenable of [false, true]) {
+      let resolve!: (value: string) => void, reject!: (error: Error) => void;
+      let reads = 0, lookups = 0;
+      const tracker = new MusicTracker(async () => {
+        if (++reads === 1) return new Promise<string>((yes, no) => { resolve = yes; reject = no; });
+        return raw(1);
+      }, async () => { lookups++; return lyrics; }, () => 0);
+      const pending = tracker.poll();
+      tracker.setEnabled(false);
+      if (reenable) tracker.setEnabled(true);
+      if (rejects) reject(new Error("Not authorized (-1743)")); else resolve(raw());
+      await pending;
+      expect(tracker.view()).toBeNull();
+      expect(tracker.lastError).toBeNull();
+      expect(lookups).toBe(0);
+      await tracker.poll(); await flush();
+      expect(reads).toBe(reenable ? 2 : 1);
+      expect(lookups).toBe(reenable ? 1 : 0);
+      tracker.stop();
+    }
+  }
+});
+
+test("disabling clears permission errors and re-enabling retries without the old backoff", async () => {
+  let denied = true;
+  const tracker = new MusicTracker(async () => {
+    if (denied) throw new Error("Not authorized (-1743)");
+    return raw(1);
+  }, async () => lyrics, () => 0);
+  await tracker.poll();
+  expect(tracker.lastError).toContain("Automation");
+  tracker.setEnabled(false);
+  expect(tracker.lastError).toBeNull();
+  denied = false;
+  tracker.setEnabled(true);
+  await tracker.poll(); await flush();
+  expect(tracker.view()?.text).toBe("First line");
+  tracker.stop();
+});

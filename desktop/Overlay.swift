@@ -135,6 +135,7 @@ final class Overlay: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var statusItem: NSStatusItem?
     var paused = false
     var hidden = false
+    private var spotifyEnabled = true
     private var lastFrame = ProcessInfo.processInfo.systemUptime
     private var watchdog: Timer?
     private var lastQuotaRequest = 0
@@ -286,6 +287,8 @@ final class Overlay: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let stats = menu.addItem(withTitle: "Stats & Achievements…", action: #selector(showStats), keyEquivalent: "")
         stats.target = self
         menu.addItem(.separator())
+        let spotify = menu.addItem(withTitle: spotifyEnabled ? "Disable Spotify integration" : "Enable Spotify integration", action: #selector(toggleSpotify), keyEquivalent: "")
+        spotify.target = self
         let pause = menu.addItem(withTitle: paused ? "Resume movement" : "Pause movement", action: #selector(togglePause), keyEquivalent: "")
         pause.target = self
         let hide = menu.addItem(withTitle: hidden ? "Show pets" : "Hide pets", action: #selector(toggleHidden), keyEquivalent: "")
@@ -299,6 +302,7 @@ final class Overlay: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func toggleCombat() { if typing.enabled { typing.disable() } else { typing.enableWithPermission() } }
     @objc private func showStats() { statsWindow.show(colors: colors) }
+    @objc private func toggleSpotify() { spotifyEnabled.toggle(); sendOptions() }
     @objc private func togglePause() { paused.toggle(); typing.suspended = paused || hidden; sendOptions() }
     @objc private func toggleHidden() {
         hidden.toggle()
@@ -309,7 +313,7 @@ final class Overlay: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func quit() { NSApp.terminate(nil) }
     @objc private func accessibilityChanged() { sendOptions() }
     private func sendOptions() {
-        emit(["type": "options", "paused": paused, "hidden": hidden, "reducedMotion": NSWorkspace.shared.accessibilityDisplayShouldReduceMotion])
+        emit(["type": "options", "paused": paused, "hidden": hidden, "spotifyEnabled": spotifyEnabled, "reducedMotion": NSWorkspace.shared.accessibilityDisplayShouldReduceMotion])
     }
     private func emit(_ value: [String: Any]) {
         var message = value

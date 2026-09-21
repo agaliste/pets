@@ -81,7 +81,7 @@ export async function startDesktop(): Promise<void> {
         const event = JSON.parse(line) as {
           type: string; screens?: Screen[]; paused?: boolean; reducedMotion?: boolean; hidden?: boolean;
           ages?: number[]; x?: number; y?: number; request?: number; screen?: string; visible?: boolean;
-          utcOffsetMinutes?: number;
+          utcOffsetMinutes?: number; spotifyEnabled?: boolean;
           timestamps?: number[]; offsets?: number[];
         };
         if (Number.isInteger(event.utcOffsetMinutes) && Math.abs(event.utcOffsetMinutes!) <= 14 * 60) utcOffsetMinutes = event.utcOffsetMinutes;
@@ -124,6 +124,7 @@ export async function startDesktop(): Promise<void> {
           } catch (error) { statsFailed(error); }
         }
         if (event.type === "options") {
+          if (typeof event.spotifyEnabled === "boolean") music.setEnabled(event.spotifyEnabled);
           paused = event.paused === true;
           reducedMotion = event.reducedMotion === true;
           hidden = event.hidden === true;
