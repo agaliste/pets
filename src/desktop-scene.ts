@@ -4,7 +4,7 @@ import type { MusicView } from "./music.ts";
 import { PROVIDER_NAMES, type AgentSession } from "./sessions.ts";
 import { MUSIC_COLORS, wrapBubble } from "./singer.ts";
 import { pixelLabel } from "./pixel-font.ts";
-import { FootballEffects, footballAtlas } from "./football-effects.ts";
+import { BACKFLIP_FRAMES, FootballEffects, footballAtlas } from "./football-effects.ts";
 import { ACCESSORIES, BALL, C, PROVIDER_MASCOTS, CODEX_PALETTE, HATS, MASCOT, type MascotFrame } from "./sprites.ts";
 
 export interface Point { x: number; y: number }
@@ -89,6 +89,21 @@ export function travel(p: Point, velocity: Point, dt: number, screens: Screen[])
   };
 }
 
+// Bake nearest-neighbor turns into pixel sprites, keeping the native protocol unchanged.
+function backflipSprite(sprite: Sprite, step: number): Sprite {
+  const width = sprite.rows[0]!.length, height = sprite.rows.length;
+  const size = Math.ceil(Math.hypot(width, height));
+  const angle = -step * Math.PI * 2 / BACKFLIP_FRAMES;
+  const cos = Math.cos(angle), sin = Math.sin(angle);
+  const rows = Array.from({ length: size }, (_, y) => Array.from({ length: size }, (_, x) => {
+    const dx = x + 0.5 - size / 2, dy = y + 0.5 - size / 2;
+    const sx = Math.floor(cos * dx + sin * dy + width / 2);
+    const sy = Math.floor(-sin * dx + cos * dy + height / 2);
+    return sprite.rows[sy]?.[sx] ?? ".";
+  }).join(""));
+  return { rows, palette: sprite.palette };
+}
+
 export function desktopAtlas(): Record<string, Sprite> {
   const atlas: Record<string, Sprite> = { ball: BALL, ...footballAtlas() };
   for (const frame of Object.keys(MASCOT) as MascotFrame[]) {
@@ -98,6 +113,10 @@ export function desktopAtlas(): Record<string, Sprite> {
   }
   HATS.forEach((hat, i) => { atlas[`hat:${i}`] = hat; });
   ACCESSORIES.forEach((accessory, i) => { atlas[`accessory:${i}`] = accessory; });
+  for (const [key, sprite] of Object.entries(atlas)) {
+    if (!key.endsWith(":kick") && !key.startsWith("hat:") && !key.startsWith("accessory:")) continue;
+    for (let step = 0; step < BACKFLIP_FRAMES; step++) atlas[`backflip:${step}:${key}`] = backflipSprite(sprite, step);
+  }
   atlas.microphone = { rows: [".##.", "####", ".##.", ".==.", ".==.", ".==."], palette: { "#": MUSIC_COLORS.text, "=": MUSIC_COLORS.muted } };
   atlas.note = { rows: ["..##", "..#.", "..#.", "###.", "##.."], palette: { "#": MUSIC_COLORS.accent } };
   atlas.laptop = { rows: ["======", "=****=", "=****=", "======", ".====."], palette: { "=": CODEX_PALETTE["="]!, "*": MUSIC_COLORS.accent } };
@@ -300,7 +319,7 @@ export class DesktopScene {
         this.ball.x = pet.x + (pet.flip ? -30 : 30); this.ball.y = pet.y + 8;
         Object.assign(this.ball, onScreen(this.ball, this.screens, 8));
         pet.kickUntil = now + 0.35; this.nextKick = now + 0.7;
-        this.shots.kick(pet.session.pid, pet, nearestScreen(this.screens, pet)!, now);
+        this.shots.kick(pet.session.pid, pet, nearestScreen(this.screens, pet)!, now, pet.flip);
       }
       const animated = Math.floor(now * (busy ? 5 : 4)) % 2 === 0;
       const lightningAge = now - pet.lightningAt;
@@ -323,9 +342,35 @@ export class DesktopScene {
         if (reveal > 0) frame.sprites.push({ sprite, x: Math.round(px), y: Math.round(py), scale: reveal, flip: pet.flip });
       };
       const bodyStart = frame.sprites.length;
-      bodyPart(`${pet.session.provider}:${pose}`, x, y);
-      bodyPart(`hat:${pet.hat}`, x, y - (HATS[pet.hat]!.rows.length - 1) * PIXEL * reveal);
-      bodyPart(`accessory:${pet.accessory}`, x, y + ACCESSORIES[pet.accessory]!.y[pet.session.provider] * PIXEL * reveal);
+      const backflip = !paused && !arriving && pet.session.status === "idle" ? this.shots.backflip(pet.session.pid, now) : null;
+      if (backflip) {
+        const angle = -backflip.step * Math.PI * 2 / BACKFLIP_FRAMES;
+        const cos = Math.cos(angle), sin = Math.sin(angle);
+        const parts = [
+          { key: `${pet.session.provider}:kick`, sprite: { rows: PROVIDER_MASCOTS[pet.session.provider].frames.kick }, offsetY: 0 },
+          { key: `hat:${pet.hat}`, sprite: HATS[pet.hat]!, offsetY: -(HATS[pet.hat]!.rows.length - 1) },
+          { key: `accessory:${pet.accessory}`, sprite: ACCESSORIES[pet.accessory]!, offsetY: ACCESSORIES[pet.accessory]!.y[pet.session.provider] },
+        ];
+        let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+        for (const part of parts) {
+          const width = part.sprite.rows[0]!.length, height = part.sprite.rows.length;
+          const size = Math.ceil(Math.hypot(width, height)) * PIXEL;
+          const dx = (width / 2 - 6) * PIXEL, dy = (part.offsetY + height / 2 - 4) * PIXEL;
+          const px = pet.x + (cos * dx - sin * dy) * (backflip.flip ? -1 : 1) - size / 2;
+          const py = pet.y - backflip.lift + sin * dx + cos * dy - size / 2;
+          frame.sprites.push({ sprite: `backflip:${backflip.step}:${part.key}`, x: Math.round(px), y: Math.round(py), flip: backflip.flip });
+          left = Math.min(left, px); top = Math.min(top, py);
+          right = Math.max(right, px + size); bottom = Math.max(bottom, py + size);
+        }
+        const screen = nearestScreen(this.screens, pet)!;
+        const shiftX = clamp(left, screen.x, Math.max(screen.x, screen.x + screen.w - (right - left))) - left;
+        const shiftY = clamp(top, screen.y, Math.max(screen.y, screen.y + screen.h - (bottom - top))) - top;
+        for (const part of frame.sprites.slice(bodyStart)) { part.x = Math.round(part.x + shiftX); part.y = Math.round(part.y + shiftY); }
+      } else {
+        bodyPart(`${pet.session.provider}:${pose}`, x, y);
+        bodyPart(`hat:${pet.hat}`, x, y - (HATS[pet.hat]!.rows.length - 1) * PIXEL * reveal);
+        bodyPart(`accessory:${pet.accessory}`, x, y + ACCESSORIES[pet.accessory]!.y[pet.session.provider] * PIXEL * reveal);
+      }
       if (busy && reveal > 0) frame.sprites.push({ sprite: "laptop", x: Math.round(x + (pet.flip ? -18 : 42) * reveal), y: Math.round(y + 18 * reveal), scale: reveal, flip: false });
       this.renderedPets.set(pet.session.pid, frame.sprites.slice(bodyStart));
       if (lightningAge < LIGHTNING_SECONDS) {

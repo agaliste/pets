@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { FootballEffects, footballAtlas } from "./football-effects.ts";
+import { FootballEffects, footballAtlas, SPECIAL_SHOTS } from "./football-effects.ts";
 import { DesktopScene, type Screen } from "./desktop-scene.ts";
 import type { AgentSession } from "./sessions.ts";
 
@@ -7,19 +7,27 @@ const screen: Screen = { id: "main", x: 0, y: 0, w: 1200, h: 900 };
 const idle = new Set([1]);
 const origin = { x: 500, y: 400 };
 
-test.each([
-  { random: 0, variant: 0, sprite: "shot:fire" },
-  { random: 0.5, variant: 1, sprite: "shot:bolt" },
-  { random: 0.99, variant: 2, sprite: "shot:wind" },
-])("special-shot variant $variant has its own callout and effects", ({ random, variant, sprite }) => {
+const variants = ["shot:fire", "shot:bolt", "shot:wind", "shot:scale", "shot:ice", "shot:shadow", "shot:sun", "shot:star", "shot:comet"]
+  .map((sprite, variant) => ({ variant, sprite, random: (variant + 0.5) / SPECIAL_SHOTS.length }));
+
+test.each(variants)("special-shot variant $variant has its own callout and effects", ({ random, variant, sprite }) => {
   const shots = new FootballEffects(() => random);
   shots.kick(1, origin, screen, 0);
   const frame = shots.render(origin, 0, [screen], idle);
   expect(frame.some(p => p.sprite === `shot:label:${variant}`)).toBe(true);
   expect(frame.some(p => p.sprite === sprite)).toBe(true);
   expect(frame.some(p => p.sprite === "shot:ring")).toBe(true);
+  expect(frame.some(p => p.sprite === "shot:impact")).toBe(true);
+  if (variant === 3) expect(frame.some(p => p.sprite === "shot:dragon")).toBe(true);
   const atlas = footballAtlas();
-  for (const p of frame) expect(atlas[p.sprite]).toBeDefined();
+  for (const p of frame) {
+    const asset = atlas[p.sprite]!;
+    expect(asset).toBeDefined();
+    for (const row of asset.rows) {
+      expect(row.length).toBe(asset.rows[0]!.length);
+      for (const pixel of row) if (pixel !== ".") expect(asset.palette[pixel]).toBeNumber();
+    }
+  }
 });
 
 test("consecutive kicks avoid repeating the previous special shot", () => {
@@ -33,29 +41,34 @@ test("consecutive kicks avoid repeating the previous special shot", () => {
   }
 });
 
-test("trails are bounded, follow a bouncing ball, and expire", () => {
-  const shots = new FootballEffects(() => 0);
+test.each(variants)("variant $variant trails are bounded, follow a bouncing ball, and expire", ({ random }) => {
+  const shots = new FootballEffects(() => random);
   shots.kick(1, origin, screen, 0);
   for (let i = 0; i < 28; i++) {
     const ball = { x: i < 14 ? 500 + i * 10 : 640 - (i - 14) * 10, y: 400 };
     const frame = shots.render(ball, i / 30, [screen], idle);
-    expect(frame.length).toBeLessThanOrEqual(17);
+    expect(frame.length).toBeLessThanOrEqual(25);
+    for (const placement of frame) {
+      expect(Number.isFinite(placement.x) && Number.isFinite(placement.y)).toBe(true);
+      expect(placement.scale).toBeGreaterThan(0);
+    }
+    if (i / 30 >= 0.28) expect(frame.some(p => p.sprite === "shot:impact" || p.sprite === "shot:ring")).toBe(false);
   }
   expect(shots.render(origin, 1, [screen], idle)).toEqual([]);
   expect(shots.active).toBe(false);
 });
 
-test("a screen-gap jump drops the old trail instead of connecting across empty space", () => {
-  const shots = new FootballEffects(() => 0);
+test.each(variants)("variant $variant drops the old trail on a screen-gap jump", ({ random, sprite }) => {
+  const shots = new FootballEffects(() => random);
   shots.kick(1, origin, screen, 0);
   shots.render(origin, 0.4, [screen], idle);
   const frame = shots.render({ x: 950, y: 400 }, 0.45, [screen], idle);
-  expect(frame.filter(p => p.sprite === "shot:fire").every(p => p.x > 900)).toBe(true);
+  expect(frame.filter(p => p.sprite === sprite).every(p => p.x > 900)).toBe(true);
 });
 
-test("pause/reduced motion, session departure, and clear discard effects without replay", () => {
+test.each(variants)("variant $variant clears on pause/reduced motion, departure, and display changes", ({ random }) => {
   for (const kind of ["pause", "departure", "display"]) {
-    const shots = new FootballEffects();
+    const shots = new FootballEffects(() => random);
     shots.kick(1, origin, screen, 0);
     if (kind === "display") shots.clear();
     expect(shots.render(origin, 0.1, [screen], kind === "departure" ? new Set() : idle, kind === "pause")).toEqual([]);
@@ -64,11 +77,11 @@ test("pause/reduced motion, session departure, and clear discard effects without
   }
 });
 
-test("shot callouts fit near the edges of offset monitors", () => {
+test.each(variants)("variant $variant callouts fit near the edges of offset monitors", ({ random }) => {
   const display = { ...screen, x: -1200, y: -900 };
   const atlas = footballAtlas();
   for (const point of [{ x: -1200, y: -900 }, { x: -1, y: -1 }]) {
-    const shots = new FootballEffects(() => 0.5);
+    const shots = new FootballEffects(() => random);
     shots.kick(1, point, display, 0);
     const label = shots.render(point, 0.1, [display], idle).find(p => p.sprite.startsWith("shot:label:"))!;
     expect(label.x).toBeGreaterThanOrEqual(display.x);

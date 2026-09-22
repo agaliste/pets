@@ -103,9 +103,19 @@ unchanged mode. Keep the desktop transparent, with no dashboard or permanent
 status bar covering the user's work.
 
 Football kicks have randomized, original anime-style special-shot effects:
-METEOR DRIVE! (flames), THUNDER STRIKE! (electric arcs), and CYCLONE SHOT!
-(spiraling wind), with a launch shockwave and outlined bitmap name. Avoid
-immediately repeating a style. `FootballEffects` in `src/football-effects.ts`
+METEOR DRIVE! (flames), THUNDER STRIKE! (electric arcs), CYCLONE SHOT!
+(spiraling wind), DRAGON ROAR! (dragon head and serpentine scales), FROST FANG!
+(scattering ice shards), SHADOW ECLIPSE! (growing crescent wake), SOLAR BURST!
+(pulsing sun sparks), GALAXY BREAK! (stars in an elliptical orbit), and BICYCLE
+COMET! (a curved comet trail and a backward somersault by the kicker).
+The bicycle kick rotates the mascot, hat, and accessory together through twelve
+baked pixel frames over 0.6 seconds with a small jump arc. Keep the group on its
+monitor, preserve the launch facing throughout the turn, and return to the normal
+pose when it lands. This is decorative: pass timing and ball/player physics stay
+unchanged, and all existing effect cancellation rules apply.
+Each kick gets a local pixel impact, launch shockwave, six outward elemental
+fragments, and an outlined bitmap name. Reuse the existing mascot/music palettes.
+Avoid immediately repeating a style. `FootballEffects` in `src/football-effects.ts`
 owns the bounded 0.95-second effect and at most 12 recent ball samples, using a
 separate random stream so decoration cannot change movement or pass physics.
 Render the ball over its aura/trail, follow actual bounces, and clear trail samples

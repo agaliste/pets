@@ -89,7 +89,11 @@ display.
 - **Working:** busy mascots carry laptops. An existing idle mascot that starts
   working receives a lightning strike and a **WORK!** callout.
 - **Breaks:** idle mascots pass a football, including across displays. Kicks get
-  **METEOR DRIVE!**, **THUNDER STRIKE!**, or **CYCLONE SHOT!** effects.
+  nine randomized special shots: **METEOR DRIVE!**, **THUNDER STRIKE!**,
+  **CYCLONE SHOT!**, **DRAGON ROAR!**, **FROST FANG!**, **SHADOW ECLIPSE!**,
+  **SOLAR BURST!**, **GALAXY BREAK!**, and **BICYCLE COMET!**, with pixel impact bursts
+  and elemental trails. Bicycle Comet sends the kicker through a backward somersault,
+  hat and accessory included.
 - **Departures:** a missile flies in from a screen edge toward the departed
   mascot's last position, followed by a pixel blast, fragments, and smoke.
 - **Unknown status:** mascots remain visible and roam without joining football.

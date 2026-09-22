@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { contains, desktopAtlas, DesktopScene, onScreen, travel, type Screen } from "./desktop-scene.ts";
 import type { MusicView } from "./music.ts";
 import type { AgentSession } from "./sessions.ts";
+import { BACKFLIP_FRAMES } from "./football-effects.ts";
 
 const screens: Screen[] = [
   { id: "left", x: -1000, y: 0, w: 1000, h: 800 },
@@ -22,6 +23,62 @@ function settle(sim: DesktopScene, sessions: AgentSession[]) {
   for (let i = 0; i < 35; i++) frame = sim.update(sessions, null, 1 / 30);
   return frame;
 }
+
+test.each(["claude", "codex", "opencode"] as const)("%s bicycle kick rotates the whole buddy in either direction and lands", provider => {
+  const atlas = desktopAtlas();
+  for (const flip of [false, true]) {
+    const sim = new DesktopScene(random(), () => 0.999);
+    const display = screens[1]!;
+    sim.setScreens([display]);
+    const sessions = [{ ...session(1), provider }, session(2)];
+    sim.update(sessions, null, 0, true);
+    const kicker = sim.pets.get(1)!, receiver = sim.pets.get(2)!;
+    Object.assign(kicker, { x: 500, y: 400, target: { x: 500, y: 400 } });
+    Object.assign(receiver, { x: flip ? 200 : 800, y: 400, target: { x: flip ? 100 : 900, y: 400 } });
+    Object.assign(sim.ball, { x: 500, y: 400, velocity: { x: 0, y: 0 } });
+    const seen = new Set<number>();
+    let frame = sim.update(sessions, null, 0.025);
+    expect(frame.sprites.some(p => p.sprite === "shot:comet")).toBe(true);
+    // Place the rotating group against a monitor corner to exercise clipping as it jumps.
+    kicker.x = 16; kicker.y = 16;
+    for (let i = 0; i < 24; i++) {
+      const parts = frame.sprites.filter(p => p.sprite.startsWith("backflip:"));
+      expect(parts).toHaveLength(3);
+      const step = Number(parts[0]!.sprite.split(":")[1]);
+      seen.add(step);
+      expect(parts.map(p => p.sprite)).toEqual([
+        `backflip:${step}:${provider}:kick`, `backflip:${step}:hat:${kicker.hat}`, `backflip:${step}:accessory:${kicker.accessory}`,
+      ]);
+      for (const part of parts) {
+        expect(part.flip).toBe(flip);
+        expect(part.x).toBeGreaterThanOrEqual(display.x);
+        expect(part.y).toBeGreaterThanOrEqual(display.y);
+        expect(part.x + atlas[part.sprite]!.rows[0]!.length * 4).toBeLessThanOrEqual(display.x + display.w);
+        expect(part.y + atlas[part.sprite]!.rows.length * 4).toBeLessThanOrEqual(display.y + display.h);
+      }
+      frame = sim.update(sessions, null, 0.025);
+    }
+    expect(seen.size).toBe(BACKFLIP_FRAMES);
+    expect(frame.sprites.some(p => p.sprite.startsWith("backflip:"))).toBe(false);
+    expect(frame.sprites.some(p => p.sprite.startsWith(`${provider}:`))).toBe(true);
+  }
+});
+
+test.each(["pause", "busy", "display"])("bicycle kick cancels without replay on %s", reason => {
+  const sim = new DesktopScene(random(), () => 0.999);
+  sim.setScreens([screens[1]!]);
+  const sessions = [session(1)];
+  sim.update(sessions, null, 0, true);
+  const pet = sim.pets.get(1)!;
+  Object.assign(sim.ball, { x: pet.x, y: pet.y, velocity: { x: 0, y: 0 } });
+  expect(sim.update(sessions, null, 0.025).sprites.some(p => p.sprite.startsWith("backflip:"))).toBe(true);
+  if (reason === "display") sim.setScreens([screens[0]!]);
+  if (reason === "busy") sessions[0]!.status = "busy";
+  const frame = sim.update(sessions, null, 0.025, reason === "pause");
+  expect(frame.sprites.some(p => p.sprite.startsWith("backflip:"))).toBe(false);
+  sessions[0]!.status = "idle";
+  expect(sim.update(sessions, null, 0.025).sprites.some(p => p.sprite.startsWith("backflip:"))).toBe(false);
+});
 
 describe("desktop display geometry", () => {
   test("crosses a continuous seam without bouncing", () => {
