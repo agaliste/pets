@@ -178,11 +178,18 @@ No extra dependency, service or permission is needed beyond typing combat.
   individual capture days. Active minutes are calendar minutes containing a
   pulse, not a measurement of uninterrupted work. Blank chart days mean **no
   recorded activity**, not proof that you did not type.
-- **50 achievements** cover lifetime keystrokes (100–10 million), qualifying
+- **Typing speed** is measured per combo in WPM (5 keystrokes = 1 word, over
+  the combo's duration). Only combos of **25+ hits** count, because shorter
+  bursts overstate speed. The Activity tab shows fastest and average WPM, today's
+  best, the fastest combo per day for the last 30 days, and the five fastest
+  combos. Upgrading migrates history to schema v2 and backfills speed for
+  existing combos; older pets builds then refuse to open it.
+- **56 achievements** cover lifetime keystrokes (100–10 million), qualifying
   combos (1–50,000, including **10,000 combos**), longest combo (5–2,500), active
-  days, consecutive active days, active minutes, daily records and minute
-  records. Unlocks persist once, using stable IDs. Minute records are key counts,
-  not words per minute. Badges have no effect on pets or permissions.
+  days, consecutive active days, active minutes, daily records, minute records
+  and typing speed (40–150 WPM). Unlocks persist once, using stable IDs. Minute
+  records are key counts, not words per minute. Badges have no effect on pets or
+  permissions.
 
 History begins with the first observed key; older activity cannot be recovered.
 The existing listener boundaries remain: monitoring must be enabled and granted,

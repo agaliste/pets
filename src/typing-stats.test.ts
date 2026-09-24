@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ACHIEVEMENTS, longestDayStreak } from "./achievements.ts";
-import { TypingStats, localDay, type TypingPulse } from "./typing-stats.ts";
+import { TypingStats, comboWpm, localDay, type TypingPulse } from "./typing-stats.ts";
 import { TypingCombat, COMBO_WINDOW_MS } from "./combat.ts";
 
 const opened: TypingStats[] = [];
@@ -26,14 +26,16 @@ afterEach(() => {
 });
 
 describe("anonymous typing history", () => {
-  test("fresh history has 50 distinct locked achievements, zero-filled charts and no fabricated activity", () => {
+  test("fresh history has 56 distinct locked achievements, zero-filled charts and no fabricated activity", () => {
     const data = create().snapshot(base);
-    expect(data.metrics).toEqual({ keys: 0, combos: 0, bestCombo: 0, activeMinutes: 0, peakMinute: 0, activeDays: 0, bestDay: 0, dayStreak: 0 });
+    expect(data.metrics).toEqual({ keys: 0, combos: 0, bestCombo: 0, activeMinutes: 0, peakMinute: 0, activeDays: 0, bestDay: 0, dayStreak: 0, bestWpm: 0 });
+    expect(data.averageWpm).toBe(0);
+    expect(data.fastestCombos).toEqual([]);
     expect(data.recordedSince).toBeNull();
     expect(data.days).toHaveLength(30);
     expect(data.hours).toHaveLength(24);
-    expect(data.achievements).toHaveLength(50);
-    expect(new Set(ACHIEVEMENTS.map(a => a.id)).size).toBe(50);
+    expect(data.achievements).toHaveLength(56);
+    expect(new Set(ACHIEVEMENTS.map(a => a.id)).size).toBe(56);
     expect(data.achievements.every(a => a.unlockedAt === null && a.progress === 0)).toBe(true);
   });
 
@@ -212,5 +214,56 @@ describe("anonymous typing history", () => {
     expect(data.today.keys).toBe(5);
     expect(data.hours[1]!.keys).toBe(5);
     expect(data.days.at(-1)!.keys).toBe(5);
+  });
+
+  test("measures WPM per combo of 25+ hits using monotonic duration", () => {
+    const stats = create();
+    stats.record(pulses(24));
+    expect(stats.snapshot(base).metrics.bestWpm).toBe(0);
+    expect(stats.snapshot(base).recentCombos[0]!.wpm).toBeNull();
+    stats.record(pulses(1, base - 60_000, 1000 + 24 * 100));
+    const data = stats.snapshot(base);
+    expect(data.metrics.bestWpm).toBe(120);
+    expect(data.today.bestWpm).toBe(120);
+    expect(data.fastestCombos.map(c => c.hits)).toEqual([25]);
+    expect(data.achievements.filter(a => a.metric === "bestWpm" && a.unlockedAt !== null).map(a => a.target)).toEqual([40, 60, 80, 100, 120]);
+  });
+
+  test("keeps the fastest combo per day and weights the average by keystrokes", () => {
+    const stats = create();
+    stats.record(pulses(25, base, 1000, 100));
+    stats.record(pulses(49, base + 10_000, 20_000, 200));
+    stats.record(pulses(25, base + 86_400_000, 200_000, 150));
+    const data = stats.snapshot(base + 86_400_000);
+    expect(data.days.at(-2)!.bestWpm).toBe(120);
+    expect(data.today.bestWpm).toBe(80);
+    expect(data.fastestCombos.map(c => Math.floor(c.wpm!))).toEqual([120, 80, 60]);
+    expect(data.averageWpm).toBe(Math.floor((24 + 48 + 24) * 12_000 / (2400 + 9600 + 3600)));
+  });
+
+  test("migrates a v1 history and backfills combo speed and day", () => {
+    const path = tempPath();
+    const db = new Database(path);
+    db.exec(`CREATE TABLE key_events (id INTEGER PRIMARY KEY, at_ms REAL NOT NULL, utc_offset_minutes INTEGER NOT NULL);
+      CREATE TABLE combos (id TEXT PRIMARY KEY, start REAL NOT NULL, end REAL NOT NULL, hits INTEGER NOT NULL CHECK(hits >= 5));
+      INSERT INTO key_events(at_ms, utc_offset_minutes) VALUES (${Date.parse("2026-09-17T23:15:00Z")}, 120);
+      INSERT INTO combos VALUES ('a', ${Date.parse("2026-09-17T23:15:00Z")}, ${Date.parse("2026-09-17T23:15:00Z") + 4800}, 49);
+      INSERT INTO combos VALUES ('b', ${base}, ${base + 400}, 5);
+      PRAGMA user_version = 1;`);
+    db.close();
+    const data = create(path).snapshot(Date.parse("2026-09-18T12:00:00Z"), 120);
+    expect(data.metrics.bestWpm).toBe(120);
+    expect(data.fastestCombos).toHaveLength(1);
+    const reader = new Database(path, { readonly: true });
+    try {
+      expect(reader.query("PRAGMA user_version").get()).toEqual({ user_version: 2 });
+      expect(reader.query("SELECT day FROM combos WHERE id = 'a'").get()).toEqual({ day: "2026-09-18" });
+    } finally { reader.close(); }
+  });
+
+  test("speed needs 25 hits and a positive duration", () => {
+    expect(comboWpm(24, 1000)).toBeNull();
+    expect(comboWpm(25, 0)).toBeNull();
+    expect(comboWpm(25, 2400)).toBe(120);
   });
 });

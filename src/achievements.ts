@@ -7,6 +7,7 @@ export interface TypingMetrics {
   bestDay: number;
   peakMinute: number;
   dayStreak: number;
+  bestWpm: number;
 }
 
 export interface Achievement {
@@ -43,6 +44,8 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
     ["A thousand-key day", "Busy keyboard", "Ten-thousand-key day", "A day to remember"]),
   ...milestones("peakMinute", "Minute records", "keystrokes in one calendar minute", [60, 120, 240, 360],
     ["Steady hands", "Double time", "Quick fingers", "Lightning fingers"]),
+  ...milestones("bestWpm", "Typing speed", "WPM across a combo of 25+ hits", [40, 60, 80, 100, 120, 150],
+    ["Cruising speed", "Quick typist", "Fast fingers", "Triple digits", "Blazing keys", "Speed demon"]),
 ];
 
 export interface AchievementProgress extends Achievement {

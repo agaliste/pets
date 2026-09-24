@@ -3,24 +3,25 @@ import SwiftUI
 
 struct TypingMetrics: Decodable {
     let keys: Int; let combos: Int; let bestCombo: Int; let activeMinutes: Int
-    let activeDays: Int; let bestDay: Int; let peakMinute: Int; let dayStreak: Int
+    let activeDays: Int; let bestDay: Int; let peakMinute: Int; let dayStreak: Int; let bestWpm: Int
 }
 struct TypingDay: Decodable, Identifiable {
     var id: String { day }
-    let day: String; let keys: Int; let activeMinutes: Int; let combos: Int; let bestCombo: Int
+    let day: String; let keys: Int; let activeMinutes: Int; let combos: Int; let bestCombo: Int; let bestWpm: Int
 }
 struct TypingHour: Decodable, Identifiable {
     var id: Int { hour }
     let hour: Int; let keys: Int
 }
-struct TypingCombo: Decodable { let start: Double; let end: Double; let hits: Int }
+struct TypingCombo: Decodable { let start: Double; let end: Double; let hits: Int; let wpm: Double? }
 struct TypingAchievement: Decodable, Identifiable {
     let id: String; let title: String; let category: String; let description: String
     let target: Int; let progress: Int; let unlockedAt: Double?
 }
 struct TypingSnapshot: Decodable {
     let metrics: TypingMetrics; let today: TypingDay; let days: [TypingDay]; let hours: [TypingHour]
-    let recentCombos: [TypingCombo]; let achievements: [TypingAchievement]
+    let recentCombos: [TypingCombo]; let fastestCombos: [TypingCombo]; let averageWpm: Int
+    let achievements: [TypingAchievement]
     let recordedSince: Double?; let generatedAt: Double
 }
 struct TypingStatsResponse: Decodable {
@@ -52,6 +53,7 @@ private struct ActivityBar: View {
     let value: Int
     let maximum: Int
     let accent: Color
+    var unit = "keystrokes"
     var body: some View {
         VStack(spacing: 5) {
             GeometryReader { area in
@@ -65,8 +67,8 @@ private struct ActivityBar: View {
         }
         .frame(minWidth: 16)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(label): \(number(value)) keystrokes")
-        .help("\(label): \(number(value)) keystrokes")
+        .accessibilityLabel("\(label): \(number(value)) \(unit)")
+        .help("\(label): \(number(value)) \(unit)")
     }
 }
 
@@ -158,6 +160,8 @@ struct StatsView: View {
             metric("Active days", data.metrics.activeDays, "\(number(data.metrics.dayStreak))-day best streak")
             metric("Active minutes", data.metrics.activeMinutes, "minutes containing typing")
             metric("Busiest minute", data.metrics.peakMinute, "keystrokes, not words per minute")
+            metric("Fastest typing", data.metrics.bestWpm, "WPM · \(number(data.today.bestWpm)) best today")
+            metric("Average speed", data.averageWpm, "WPM across 25+ hit combos")
         }
         Divider()
         VStack(alignment: .leading, spacing: 12) {
@@ -187,6 +191,31 @@ struct StatsView: View {
                 }.frame(height: 130)
             }
         }
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Typing speed").font(.headline)
+            Text("Fastest combo per day, in WPM (5 keystrokes = 1 word) · only combos of 25+ hits count.")
+                .font(.caption).foregroundStyle(muted)
+            ScrollView(.horizontal) {
+                HStack(alignment: .bottom, spacing: 4) {
+                    ForEach(data.days) { day in
+                        ActivityBar(label: String(day.day.suffix(5)), value: day.bestWpm,
+                                    maximum: data.days.map(\.bestWpm).max() ?? 1, accent: accent, unit: "WPM")
+                            .frame(width: 30)
+                    }
+                }.frame(height: 130)
+            }
+            Text("Fastest combos").font(.subheadline.bold())
+            if data.fastestCombos.isEmpty { Text("No combo of 25+ hits yet.").foregroundStyle(muted) }
+            ForEach(Array(data.fastestCombos.enumerated()), id: \.offset) { index, combo in
+                HStack {
+                    Text("#\(index + 1)").font(.system(size: 12, design: .monospaced)).foregroundStyle(muted)
+                    Text(moment(combo.start)).font(.system(size: 12))
+                    Spacer()
+                    Text("\(number(combo.hits)) hits · \(number(Int(combo.wpm ?? 0))) WPM")
+                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                }
+            }
+        }
         VStack(alignment: .leading, spacing: 10) {
             Text("Recent combos").font(.headline)
             Text("One combo = a streak of 5+ hits. A gap over 1.4 seconds or a combat reset ends the streak.")
@@ -196,7 +225,8 @@ struct StatsView: View {
                 HStack {
                     Text(moment(combo.start)).font(.system(size: 12))
                     Spacer()
-                    Text("\(number(combo.hits)) hits").font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    Text(combo.wpm.map { "\(number(combo.hits)) hits · \(number(Int($0))) WPM" } ?? "\(number(combo.hits)) hits")
+                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
                 }
             }
         }
