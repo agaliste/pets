@@ -179,16 +179,18 @@ suppressed during macOS Secure Input and for identified secure text fields.
 is not persisted: on the next launch, monitoring starts automatically if both
 permissions are already available.
 
-## Typing history and 50 achievements
+## Typing history and 56 achievements
 
 Open **⚽ → Stats & Achievements…** for:
 
 - Lifetime totals and today's typing activity.
 - An hourly breakdown and the last 30 calendar days.
 - The ten latest qualifying combos and your longest streak.
-- **50 achievements** with progress and locked/unlocked filters, covering
+- Typing speed: fastest and average WPM, today's best, the fastest combo of each
+  of the last 30 days, and your five fastest combos.
+- **56 achievements** with progress and locked/unlocked filters, covering
   keystrokes, combo counts, longest combos, active days, consecutive days,
-  active minutes, and daily/minute records.
+  active minutes, daily/minute records, and typing speed.
 
 The window refreshes while open. New unlocks produce quiet, nonactivating
 five-second notices; unlocks persist across restarts without replaying notices.
@@ -197,8 +199,10 @@ A combo counts once when it reaches **five accepted hits**. Its length keeps
 growing in history even beyond the visual counter's 999-hit limit. Keystroke
 totals can include pulses rejected by the combat animation's rapid-hit filter.
 Active minutes mean calendar minutes containing a recorded pulse, and minute
-records are key counts, not words per minute. Hour/day grouping uses local time
-at capture; travelling does not regroup old events.
+records are key counts, not words per minute. Typing speed is measured per
+combo: WPM = (hits − 1) ÷ 5 per minute of combo duration, and only combos of
+**25+ hits** get a speed. Hour/day grouping uses local time at capture;
+travelling does not regroup old events.
 
 History is stored at:
 
